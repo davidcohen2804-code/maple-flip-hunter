@@ -74,9 +74,10 @@ class TierRow:
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, settings: Settings, parent=None, notifier=None):
+    def __init__(self, settings: Settings, parent=None, notifier=None, engine=None):
         super().__init__(parent)
         self.notifier = notifier
+        self.engine = engine
         self.setWindowTitle("Settings — Maple Flip Hunter")
         self.setMinimumSize(560, 360)
         self.setSizeGripEnabled(True)           # resizable + draggable like any normal window
@@ -198,6 +199,11 @@ class SettingsDialog(QDialog):
         self.btn_add_tier = QPushButton("+ Add band")
         self.btn_add_tier.clicked.connect(self._add_tier_clicked)
         row_btns.addWidget(self.btn_add_tier)
+        self.btn_test_auto = QPushButton("🧪 Test Automatic Alert")
+        self.btn_test_auto.setToolTip("Runs the real alert path from a background thread (like the scanner): "
+                                      "profit band → sound → floating card. No market data is created or changed.")
+        self.btn_test_auto.clicked.connect(self._test_automatic_alert)
+        row_btns.addWidget(self.btn_test_auto)
         row_btns.addStretch(1)
         row_btns.addWidget(QLabel("Volume"))
         self.volume = QSlider(Qt.Horizontal)
@@ -315,6 +321,10 @@ class SettingsDialog(QDialog):
     def _preview(self, sound_id: str) -> None:
         if self.notifier is not None:
             self.notifier.play(sound_id, volume=self.volume.value() / 100)
+
+    def _test_automatic_alert(self) -> None:
+        if self.engine is not None:
+            self.engine.simulate_alert()
 
     def _volume_changed(self, v: int) -> None:
         self.vol_label.setText(f"{v} %")

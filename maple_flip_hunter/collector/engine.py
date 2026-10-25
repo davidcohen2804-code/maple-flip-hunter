@@ -346,6 +346,7 @@ class MarketEngine:
             self._fire_alert(opp, sound)
         elif opp.level in (Level.JACKPOT, Level.GOOD) and not opp.stale:
             self.metrics.duplicate_alerts_suppressed += 1
+            log.info("AUDIO_SUPPRESSED reason=%s key=%s", "notifications disabled" if sound else "already alerted (dedupe)", opp.key)
         return opp
 
     def _fire_alert(self, opp: Opportunity, level: str) -> None:
@@ -356,6 +357,8 @@ class MarketEngine:
         self.db.save_opportunity(opp)
         title, body = format_alert(opp)
         sound = self.sound_for(opp)
+        log.info("ALERT_CREATED level=%s item=%r buy=%s net=%s sound=%s key=%s", level, opp.listing.item_name,
+                 opp.listing.price, opp.valuation.net_profit, sound, opp.key)
         try:
             if self.notifier is not None:
                 self.notifier.alert(opp, level, title, body, sound=sound)
@@ -373,6 +376,36 @@ class MarketEngine:
         return tier.sound
 
     # ----------------------------------------------------------- helpers
+    def simulate_alert(self) -> Opportunity:
+        """'Test Automatic Alert': runs the REAL alert path (profit band → notifier → GUI card) for a synthetic
+        TEST opportunity, from a background thread exactly like the scanner. Touches no database table, no
+        metrics, no market data."""
+        from ..models import Listing, Valuation
+
+        now = time.time()
+        lst = Listing(listing_key=f"test|simulated-alert|{int(now)}", source="test", item_name="TEST ALERT (simulated)",
+                      item_key="test alert (simulated)", seller="TestShop", channel=1, fm_room=1, price=8_000,
+                      source_seen_at=now, local_first_seen_at=now, source_url="")
+        tiers = [t for t in self.settings.sound_tiers if t.enabled]
+        net = tiers[-1].min_profit + 1 if tiers else 60_000
+        v = Valuation(reference=net + 8_000 + 2_000, quick=int((net + 8_000) / 0.97) + 1, conservative=net + 8_000,
+                      net_profit=net, net_profit_conservative=int(net * 0.9), roi=net / 8_000, discount=0.8,
+                      confidence=0.95, confidence_label="HIGH", liquidity="HIGH",
+                      explanation=["Simulated opportunity — this is a test of the alert chain, not market data."])
+        opp = Opportunity(listing=lst, valuation=v, level=Level.JACKPOT, reasons=["TEST: simulated alert"])
+
+        def worker() -> None:
+            opp.notified_at = time.time()
+            title, body = format_alert(opp)
+            sound = self.sound_for(opp)
+            log.info("ALERT_CREATED level=TEST(simulated) sound=%s thread=worker", sound)
+            if self.notifier is not None:
+                self.notifier.alert(opp, "JACKPOT", "🧪 TEST " + title, body, sound=sound)
+            self._emit("alert", opp, "JACKPOT", "🧪 " + title, body)
+
+        threading.Thread(target=worker, name="mfh-simulated-alert", daemon=True).start()
+        return opp
+
     def test_alarm(self, level: str = "JACKPOT") -> None:
         if self.notifier is not None:
             self.notifier.play(level)

@@ -69,6 +69,8 @@ class MainWindow(QMainWindow):
         self.bridge.health.connect(self.on_health)
         self.bridge.listing.connect(self.on_listing)
         notifier.toast_callback = None  # toasts are handled from the alert signal on the UI thread
+        if not notifier.attach_gui():    # creates the GUI-thread audio proxy so scanner-thread alerts can play
+            log.warning("audio: GUI proxy could not be attached; automatic alerts will use the fallback backend")
 
         self.model = OpportunityModel()
         self.proxy = OpportunityFilter()
@@ -357,7 +359,7 @@ class MainWindow(QMainWindow):
         self.settings.save()
 
     def open_settings(self) -> None:
-        dlg = SettingsDialog(self.settings, self, notifier=self.notifier)
+        dlg = SettingsDialog(self.settings, self, notifier=self.notifier, engine=self.engine)
         if not dlg.exec():
             self.settings.save()               # Cancel still remembers the window's size and position
             return
@@ -412,7 +414,8 @@ class MainWindow(QMainWindow):
         self.model.upsert(opp)
 
     def on_alert(self, opp: Opportunity, level: str, title: str, body: str) -> None:
-        self.model.upsert(opp)
+        if opp.listing.source != "test":
+            self.model.upsert(opp)            # simulated test alerts never enter the opportunities table
         l = opp.listing
         # always-on-top card: stays until OK; Mute stops the sound now and silences alerts for 60 s
         lat = (self.notifier.last_play_at - l.local_first_seen_at) * 1000 if self.notifier.last_play_at else None

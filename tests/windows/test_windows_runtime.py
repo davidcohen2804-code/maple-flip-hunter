@@ -219,3 +219,50 @@ def test_alert_sound_fires_automatically_from_scanner_path(qapp, tmp_path):
         time.sleep(0.02)
     assert pop.isVisible() and pop.windowFlags() & Qt.WindowStaysOnTopHint
     pop.close()
+
+
+def test_automatic_alert_from_scanner_thread_reaches_qt_audio_on_gui_thread(qapp, tmp_path):
+    """The real bug: alerts come from the scanner thread. With the GUI proxy attached, the sound must be started on
+    the GUI thread via QSoundEffect (AUDIO_STARTED thread=gui). Physical output can only be confirmed on a machine
+    with a sound card; here we assert the chain and report the device situation honestly."""
+    import asyncio
+    import threading
+
+    from maple_flip_hunter.collector.engine import MarketEngine
+    from maple_flip_hunter.config import Settings
+    from maple_flip_hunter.db import Database
+    from maple_flip_hunter.notifications import Notifier, ensure_sounds
+    from tests.conftest import make_evidence, make_listing
+
+    n = Notifier(volume=0.5, enable_audio=True, sounds=ensure_sounds(tmp_path))
+    outputs = _audio_outputs()
+    print(f"AUDIO-THREAD: backend={n.backend} outputs={outputs}")
+    attached = n.attach_gui()
+    if n.backend != "qt" or not attached:
+        pytest.skip(f"NOT VERIFIED here: Qt audio backend unavailable on this runner (backend={n.backend}, outputs={outputs})")
+    s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000)
+    eng = MarketEngine(s, Database(":memory:"), n, adapters=[])
+
+    async def evidence(lst):
+        r = lst.source_ref_price
+        return make_evidence(lst, sold_median=r, sold_count=40, sales24=6, asks=(int(r * 1.03), int(r * 1.05), int(r * 1.1)))
+    eng.gather_evidence = evidence  # type: ignore[method-assign]
+
+    def worker():   # exactly what the scanner thread does
+        asyncio.new_event_loop().run_until_complete(eng.ingest([make_listing(price=8_000, ref=75_000, age_s=5)]))
+    t = threading.Thread(target=worker); t.start(); t.join()
+    deadline = time.time() + 3
+    while time.time() < deadline and not [d for _, e, d in n.audio_log if e == "AUDIO_STARTED"]:
+        qapp.processEvents(); time.sleep(0.02)
+    started = [d for _, e, d in n.audio_log if e == "AUDIO_STARTED"]
+    errors = [d for _, e, d in n.audio_log if e == "AUDIO_ERROR"]
+    requested = [d for _, e, d in n.audio_log if e == "AUDIO_REQUESTED"]
+    print("AUDIO-THREAD log:", n.audio_log[-6:])
+    assert requested and "thread=worker" in requested[-1]
+    assert started and "thread=gui" in started[-1] and "sound=jackpot" in started[-1], (started, errors)
+    assert not errors
+    eff = n._effects["jackpot"]
+    assert eff.thread() is qapp.thread()
+    for _ in range(25):
+        qapp.processEvents(); time.sleep(0.02)
+    print(f"AUDIO-THREAD: effect status={eff.status()} isPlaying={eff.isPlaying()} (physical output {'present' if outputs else 'NOT VERIFIED - no device'})")
