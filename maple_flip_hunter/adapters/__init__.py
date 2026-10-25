@@ -1,6 +1,7 @@
 from .base import BaseAdapter, FetchError, RateLimited, TokenBucket  # noqa: F401
 from .clubfm import ClubFMAdapter  # noqa: F401
 from .cozy import CozyAdapter  # noqa: F401
+from .fmwatcher import FMWatcherAdapter  # noqa: F401
 from .maplestory_watch import MapleStoryWatchAdapter  # noqa: F401
 
 # Sources investigated but NOT integrated (see docs/SOURCE_AUDIT.md):

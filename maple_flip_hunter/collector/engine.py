@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from ..adapters import ClubFMAdapter, CozyAdapter, MapleStoryWatchAdapter
+from ..adapters import ClubFMAdapter, CozyAdapter, FMWatcherAdapter, MapleStoryWatchAdapter
 from ..adapters.base import BaseAdapter
 from ..config import Settings, tier_for_profit
 from ..db import Database
@@ -53,6 +53,9 @@ class MarketEngine:
         if s.source_cozy_enabled:
             out.append(CozyAdapter(interval_s=s.source_cozy_interval_s, max_shops_per_cycle=s.source_cozy_max_shops_per_cycle,
                                    token=s.source_cozy_token))
+        if s.source_fmwatcher_enabled and s.source_fmwatcher_dir.strip():
+            out.append(FMWatcherAdapter(interval_s=s.source_fmwatcher_interval_s, directory=s.source_fmwatcher_dir.strip(),
+                                        max_age_s=s.source_fmwatcher_max_age_s))
         if s.source_msw_enabled:
             out.append(MapleStoryWatchAdapter(interval_s=s.source_msw_interval_s,
                                               max_item_lookups=s.source_msw_max_item_lookups_per_cycle,

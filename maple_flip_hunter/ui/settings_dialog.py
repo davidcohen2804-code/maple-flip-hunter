@@ -246,6 +246,21 @@ class SettingsDialog(QDialog):
         warn = QLabel("Tick Club FM only after they agreed in writing (Terms of Use §2). See docs/ACCESS_REQUESTS.md.")
         warn.setObjectName("subtitle")
         f4.addRow(warn)
+        self.fmw_dir = QLineEdit(s.source_fmwatcher_dir)
+        self.fmw_dir.setPlaceholderText(r"e.g. C:\Users\you\Documents\FMWatcher  (folder with start.bat)")
+        fmw_row = QHBoxLayout()
+        fmw_row.addWidget(self.fmw_dir, 1)
+        self.btn_fmw_browse = QPushButton("Browse…")
+        self.btn_fmw_browse.clicked.connect(self._browse_fmwatcher)
+        fmw_row.addWidget(self.btn_fmw_browse)
+        fmw_host = QWidget()
+        fmw_host.setLayout(fmw_row)
+        f4.addRow("FM Watcher folder (your own scans)", fmw_host)
+        fmw_note = QLabel("Run Club FM's FM Watcher while you browse the FM; its local watcher_data_v2.json / my_scans.csv "
+                          "become a live source here. Nothing is sent anywhere.")
+        fmw_note.setObjectName("subtitle")
+        fmw_note.setWordWrap(True)
+        f4.addRow(fmw_note)
         note = QLabel("Source changes take effect after Stop → Start.")
         note.setObjectName("subtitle")
         f4.addRow(note)
@@ -322,6 +337,13 @@ class SettingsDialog(QDialog):
         if self.notifier is not None:
             self.notifier.play(sound_id, volume=self.volume.value() / 100)
 
+    def _browse_fmwatcher(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        d = QFileDialog.getExistingDirectory(self, "FM Watcher folder (contains start.bat)", self.fmw_dir.text() or "")
+        if d:
+            self.fmw_dir.setText(d)
+
     def _test_automatic_alert(self) -> None:
         if self.engine is not None:
             self.engine.simulate_alert()
@@ -361,5 +383,6 @@ class SettingsDialog(QDialog):
             source_msw_interval_s=self.msw_int.value(), source_cozy_token=self.cozy_token.text().strip(),
             source_clubfm_permission_granted=self.cb_clubfm.isChecked(),
             source_clubfm_token=self.clubfm_token.text().strip(),
+            source_fmwatcher_dir=self.fmw_dir.text().strip(),
         )
         return Settings.model_validate(d)

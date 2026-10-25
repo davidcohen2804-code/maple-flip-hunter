@@ -70,6 +70,7 @@
 | Minimum confidence | JACKPOT 60%, GOOD 45% | ציון ביטחון מוסבר בפאנל |
 | Treat listings older than | 900 שניות | מעבר לזה — stale |
 | Sources | cozy.markets כל 10 ש', maplestory.watch כל 3 דק', Club FM כל 60 ש' | שינוי מקורות מפעיל מחדש את הסורק |
+| FM Watcher folder | ריק | **מקור LIVE שני מהסריקות שלך**: הרץ את FM Watcher של Club FM (חינמי, קורא רק את המסך) ובחר כאן את התיקייה שלו; כל חנות שאתה פותח ב-FM נכנסת תוך שניות לזיהוי ולהתראות. לא נשלח כלום לשום מקום. |
 | Club FM (maplefm.gg) | כבוי | לסמן **רק** אחרי אישור בכתב מצוות Club FM; טוקן (אם ניתן) מפעיל את `/data/live`, אחרת snapshot |
 | Run when Windows starts | כבוי | רישום למשתמש הנוכחי בלבד |
 

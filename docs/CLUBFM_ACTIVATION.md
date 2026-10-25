@@ -1,5 +1,10 @@
 # Club FM (maplefm.gg) — activation checklist
 
+> **Shortcut that needs no permission (v0.7.0):** run Club FM's own *FM Watcher* while you browse the FM and point
+> Settings → Sources → *FM Watcher folder* at its folder. Your own scans become a second LIVE source within seconds
+> (see docs/SOURCE_AUDIT.md, "FM Watcher"). The server-side Club FM feed below is still worth having for *other*
+> players' scans and completed-sale evidence.
+
 Status (v0.6.0): **technical integration complete; real requests disabled** until a genuine written permission from the
 Club FM team is on record and `Settings → Sources → Club FM` is ticked.
 

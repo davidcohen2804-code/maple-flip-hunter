@@ -93,3 +93,22 @@ Reading: Club FM would add roughly **+1.5 % listing rows** (nearly all non-overl
 real time via the snapshot; the gated live feed is advertised as "every minute". It is a genuine but small second LIVE
 source. cozy.markets would be far larger (newest rows 5–30 s) but answers HTTP 403 to anything that is not a browser,
 including cross-origin `fetch` from the home PC; that needs their whitelisting/token — nothing here bypasses it.
+
+
+## FM Watcher (Club FM's scanner, run by the user) — audited 2026-10-26 from its published source
+
+Source: https://github.com/maplefm/maplefm.github.io/tree/main/download/source (`watcher.py`, `README.txt`).
+* What it is: a free Windows program (Python + Tesseract OCR) that screen-reads Free Market shop windows on the
+  user's own screen; it never clicks, types or touches the game's memory/files (its README and how-it-works page).
+* Local data it keeps: `watcher_data_v2.json` (Store.save(): atomic replace, ≤ 30 s after a change; entries keyed
+  `[day, seller, item, price, qty]` with `first/last` timestamps, `nu` open count, `so/ns/sb` sold counts, `r` room
+  ("FM3"), `c` channel, `x` tooltip stats, `xj` job) and `my_scans.csv` via `export.bat` — README: "Reviewing your own
+  data … writes my_scans.csv with every listing this watcher has seen". `review_mode: true` keeps everything local.
+* Supported export: **yes** (export.bat). Reading the live JSON gives the same rows within seconds instead of on demand.
+* Access/credentials: none. The data is the user's own scans on the user's PC. Club FM's Terms govern *their* site
+  data; this does not touch their servers (the watcher's own uploads are unchanged).
+* Freshness: seconds (file rewritten ≤ 30 s after a read; adapter polls every 5 s).
+* Coverage: exactly the shops the user opens — complementary to maplestory.watch (community scanners), with the
+  user's channel/room always known. Measured value depends entirely on how much the user browses.
+* Browser-based export on maplefm.gg: none found (watchlist/settings stay in the browser; the site offers the public
+  snapshot JSON and the gated live feed only). Integration: `adapters/fmwatcher.py`, status LIVE in the app.

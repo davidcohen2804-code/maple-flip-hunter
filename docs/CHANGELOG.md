@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.0 — 2026-10-26 (second LIVE source: your own FM Watcher scans)
+* New source **FM Watcher (your own scans)** — `adapters/fmwatcher.py`. Club FM's free scanner (which you run; it
+  only screen-reads shop windows and is Club FM's official tool) keeps every listing it saw in its folder:
+  `watcher_data_v2.json` (rewritten within ~30 s of each read) and `my_scans.csv` (its documented export.bat —
+  "Reviewing your own data"). Maple Flip Hunter polls those files every 5 s by modification time and ingests new /
+  updated rows with seller, price (unit price for bundles), quantity, channel, FM room, scan time, sold-out flag and
+  hovered equip stats. No game access, no Club FM server access, no permission needed; FM Watcher's own publishing
+  is untouched. Settings → Sources → **FM Watcher folder** (Browse…). Status shows `reading watcher_data_v2.json`;
+  STALE after 10 min without a file update.
+* Rows flow through the unchanged pipeline: evidence from maplestory.watch/Club FM/local DB → pricing → filters →
+  profit-band sound → floating card; cross-source dedupe prevents a second alert when maplestory.watch later sees
+  the same shop. maplestory.watch runs independently.
+* Tests: store-file parsing (location/price/time/stats/bundles/sold), CSV fallback, missing folder handling,
+  end-to-end own-scan → JACKPOT → sound → dedupe vs maplestory.watch. 86 unit tests.
+
+
 ## 0.6.5 — 2026-10-26 (FIX: automatic alerts were silent)
 * **Root cause:** alerts are raised on the scanner's asyncio thread; `QSoundEffect` objects created and played from
   that thread never produce sound (Qt audio needs the GUI thread's event loop). *Test alarm* runs on the GUI thread,

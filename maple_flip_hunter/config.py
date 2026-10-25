@@ -121,6 +121,12 @@ class Settings(BaseModel):
     source_clubfm_live_interval_s: float = Field(60.0, ge=5.0, description="Live-feed polling interval when a token works")
     source_clubfm_live_backoff_s: float = Field(30.0, ge=5.0, description="First retry delay after the live feed refuses/fails; doubles up to 10 min")
     source_clubfm_base_url: str = Field("https://api.maplefm.gg", description="Change only for the local simulator (tools/clubfm_simulator.py)")
+    # FM Watcher (Club FM's free scanner that YOU run): Maple Flip Hunter reads its local files
+    # (watcher_data_v2.json / my_scans.csv) — your own scans, no server access, no permission needed.
+    source_fmwatcher_enabled: bool = True
+    source_fmwatcher_dir: str = Field("", description="Folder where FM Watcher's start.bat lives (empty = off)")
+    source_fmwatcher_interval_s: float = Field(5.0, ge=2.0)
+    source_fmwatcher_max_age_s: int = Field(1800, ge=60, description="Ignore scans older than this")
     # cozy.markets: the public JSON answers browsers but returns HTTP 403 to this app (Cloudflare bot
     # protection), both from datacenters and from a home PC. The adapter stays enabled so a future
     # whitelisting / token simply works; nothing circumvents the block.
