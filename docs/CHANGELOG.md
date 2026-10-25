@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.5 — 2026-10-26 (FIX: automatic alerts were silent)
+* **Root cause:** alerts are raised on the scanner's asyncio thread; `QSoundEffect` objects created and played from
+  that thread never produce sound (Qt audio needs the GUI thread's event loop). *Test alarm* runs on the GUI thread,
+  which is why it always worked. The scanner, filters and the profit-band choice were correct (the log showed
+  `1 alerts`, the row showed `alerted …`).
+* **Fix:** every play request is marshalled to the GUI thread through a queued Qt signal; all sound effects are
+  created once on the GUI thread, parented and kept for the life of the process (never destroyed mid-play).
+  `MainWindow` attaches the proxy at start-up. No filter threshold was changed.
+* Logging: `ALERT_CREATED`, `AUDIO_REQUESTED` (with thread=gui/worker), `AUDIO_STARTED`, `AUDIO_ERROR`,
+  `AUDIO_SUPPRESSED reason=…` (muted / audio disabled / band disabled / already alerted / notifications off).
+* Settings → **🧪 Test Automatic Alert**: runs the real alert path from a background thread (profit band → sound →
+  floating card) for a synthetic TEST row; nothing is written to the database or the table.
+* Tests: GUI-thread marshalling, suppression reasons, simulated alert end-to-end (unit) + Windows runtime test that an
+  engine ingest on a worker thread reaches `AUDIO_STARTED thread=gui`. CI runners have no sound card: physical
+  playback is NOT verified there — verify at home (see README §6).
+
+
 ## 0.6.4 — 2026-10-26 (main window: free resize, no clipping, layout memory)
 * Main window resizes freely from every edge and corner down to 900×560; long status texts (source list, coverage)
   wrap/shrink instead of forcing the window wider — this was what pushed buttons and data off-screen until the window

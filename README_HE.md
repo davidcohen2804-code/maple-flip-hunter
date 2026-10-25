@@ -80,7 +80,8 @@
 |---|---|
 | המצב נשאר OFFLINE | בדוק חיבור לאינטרנט; פתח בדפדפן את https://cozy.markets/market — אם האתר לא עולה, גם התוכנה לא תקבל נתונים. ראה `%APPDATA%\MapleFlipHunter\logs\maple_flip_hunter.log`. |
 | DEGRADED / RATE LIMITED | המקור ביקש להאט; התוכנה ממתינה אוטומטית. אפשר להגדיל את מרווח הסריקה בהגדרות. |
-| אין צליל | לחץ Test alarm; בדוק שמכשיר הפלט של Windows תקין; הסליידר Volume לא ב-0. |
+| אין צליל בהתראה אוטומטית | Settings → **🧪 Test Automatic Alert** — מריץ את המסלול האמיתי (thread רקע → צליל → כרטיס צף). אם נשמע — המערכת תקינה. אם לא: פתח `%APPDATA%\MapleFlipHunter\logs\maple_flip_hunter.log` וחפש `AUDIO_`: `AUDIO_STARTED thread=gui` = הצליל נשלח לכרטיס הקול; `AUDIO_SUPPRESSED reason=…` מסביר למה הושתק (Mute, Alerts כבוי, טווח רווח כבוי); `AUDIO_ERROR` = תקלת מערכת שמע. |
+| אין צליל | לחץ Test alarm; בדוק שמכשיר הפלט של Windows תקין; הסליידר Vol לא ב-0. |
 | אין הודעות Windows | כבה "Focus Assist / נא לא להפריע". הצליל מושמע גם כשההודעות מושתקות. |
 | אנטי-וירוס חוסם את ה-EXE | קבצי PyInstaller לא חתומים לעיתים מסומנים; הרץ מהקוד עם `run_dev.bat`. |
 | הרבה UNCERTAIN ומעט התראות | זה מכוון: ציוד בלי סטטים ידועים ופריטים בלי היסטוריית מכירות לא מקבלים אזעקה. אפשר להוריד את סף הביטחון בהגדרות (על אחריותך). |
