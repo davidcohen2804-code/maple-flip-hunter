@@ -69,6 +69,7 @@ class MainWindow(QMainWindow):
 
         self.model = OpportunityModel()
         self.proxy = OpportunityFilter()
+        self.proxy.settings = settings
         self.proxy.setSourceModel(self.model)
         self._build()
         self._tray()
@@ -301,6 +302,8 @@ class MainWindow(QMainWindow):
             self.engine.update_settings(new)
             self.cb_notif.setChecked(new.notifications_enabled)
             set_run_on_startup(new.run_on_windows_startup)
+            self.proxy.settings = new
+            self.proxy.invalidateFilter()      # existing rows that no longer pass disappear at once (DB keeps them)
             source_changed = any(getattr(old, k) != getattr(new, k) for k in new.model_fields if k.startswith("source_"))
             if source_changed and self.engine.running:
                 self.engine.stop()

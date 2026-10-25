@@ -257,8 +257,8 @@ class MarketEngine:
     def _prefilter(self, lst: Listing) -> bool:
         """Cheap gate before fetching evidence: within budget and visibly under the source's own reference
         (or unknown reference -> evaluate anyway when cheap enough to matter)."""
-        if lst.price > self.settings.max_buy_price:
-            return False
+        if lst.price > self.settings.max_buy_price or lst.price < self.settings.min_buy_price:
+            return False   # stored and counted, but outside the alert range -> no evidence fetch
         if lst.source_ref_price:
             return lst.price <= lst.source_ref_price * (1 - self.PREFILTER_DISCOUNT)
         return lst.price >= 1000  # unknown reference: evaluate only non-trivial prices

@@ -40,11 +40,13 @@ class SettingsDialog(QDialog):
         f1 = QFormLayout(g1)
         f1.setContentsMargins(16, 20, 16, 16)
         f1.setSpacing(12)
+        self.min_buy = _mesos(s.min_buy_price)
         self.max_buy = _mesos(s.max_buy_price)
         self.min_profit = _mesos(s.min_net_profit)
         self.fee = _pct(s.selling_fee, 0.5)
         self.val_min = _mesos(s.preferred_value_min)
         self.val_max = _mesos(s.preferred_value_max)
+        f1.addRow("Minimum purchase price", self.min_buy)
         f1.addRow("Maximum purchase price", self.max_buy)
         f1.addRow("Minimum net profit", self.min_profit)
         f1.addRow("Selling fee", self.fee)
@@ -72,6 +74,27 @@ class SettingsDialog(QDialog):
         f2.addRow("GOOD FLIP: minimum confidence", self.good_conf)
         f2.addRow("Treat listings older than", self.max_age)
         root.addWidget(g2)
+
+        gq = QGroupBox("QUICK FLIPS ONLY (stricter gate for JACKPOT / GOOD FLIP alerts)")
+        fq = QFormLayout(gq)
+        fq.setContentsMargins(16, 20, 16, 16)
+        fq.setSpacing(12)
+        self.cb_quick = QCheckBox("Enable — alert only on fast, well-evidenced resales")
+        self.cb_quick.setChecked(s.quick_flips_only)
+        self.q_profit = _mesos(s.quick_flip_min_net_profit)
+        self.q_conf = _pct(s.quick_flip_min_confidence)
+        self.q_age = QSpinBox()
+        self.q_age.setRange(30, 3600)
+        self.q_age.setSuffix(" s")
+        self.q_age.setValue(s.quick_flip_max_data_age_s)
+        self.cb_q_liq = QCheckBox("Require HIGH liquidity (else MEDIUM is enough)")
+        self.cb_q_liq.setChecked(s.quick_flip_require_high_liquidity)
+        fq.addRow(self.cb_quick)
+        fq.addRow("Min net profit at CONSERVATIVE sale (after fee)", self.q_profit)
+        fq.addRow("Min confidence", self.q_conf)
+        fq.addRow("Max age of listing and reference data", self.q_age)
+        fq.addRow(self.cb_q_liq)
+        root.addWidget(gq)
 
         g3 = QGroupBox("Alerts & behaviour")
         v3 = QVBoxLayout(g3)
@@ -137,7 +160,10 @@ class SettingsDialog(QDialog):
     def result_settings(self, base: Settings) -> Settings:
         d = base.model_dump()
         d.update(
-            max_buy_price=self.max_buy.value(), min_net_profit=self.min_profit.value(),
+            min_buy_price=self.min_buy.value(), max_buy_price=self.max_buy.value(), min_net_profit=self.min_profit.value(),
+            quick_flips_only=self.cb_quick.isChecked(), quick_flip_min_net_profit=self.q_profit.value(),
+            quick_flip_min_confidence=self.q_conf.value() / 100, quick_flip_max_data_age_s=self.q_age.value(),
+            quick_flip_require_high_liquidity=self.cb_q_liq.isChecked(),
             selling_fee=self.fee.value() / 100, preferred_value_min=self.val_min.value(),
             preferred_value_max=self.val_max.value(), jackpot_min_profit=self.jp_profit.value(),
             jackpot_roi_profit=self.jp_roi_profit.value(), jackpot_roi=self.jp_roi.value() / 100,

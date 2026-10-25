@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0 — 2026-10-25 (alert filters)
+* Settings: **Minimum purchase price** (default 2,500) and **Maximum purchase price** (default now 10,000). The scanner still
+  ingests and stores the whole market; only listings inside the band are evaluated for alerts.
+* Settings: **QUICK FLIPS ONLY** mode — JACKPOT / GOOD FLIP alerts require net profit at the CONSERVATIVE sale price after
+  fee ≥ 10,000, confidence ≥ 0.80, listing *and* reference data ≤ 5 min old, HIGH liquidity (configurable); missing data
+  ⇒ no alert (shown as UNCERTAIN).
+* One shared filter (`detection.passes_user_filters`) now drives both the alerts and the **opportunity table**: price band
+  + minimum net profit (conservative net in quick mode). It applies to rows already loaded from the database and
+  re-applies the moment Settings are saved. Nothing is deleted from the database.
+* Tests: band limits, quick-flip gates (profit, confidence, listing age, reference age, liquidity, missing data), table
+  filter following settings changes, settings changes while LIVE. 60 unit tests.
+
 ## 0.4.2 — 2026-10-25
 * Stop now cancels adapter tasks after a 1.5 s grace (long lookup loops and back-off sleeps no longer delay shutdown); loops check the stop flag; clients are closed before stop() returns. Tests for stop during a long poll and during an in-flight request. 55 unit tests.
 

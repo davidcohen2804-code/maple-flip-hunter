@@ -29,4 +29,4 @@ def test_settings_roundtrip(tmp_path):
     assert s2.max_buy_price == 99_000 and s2.selling_fee == 0.05
     p.write_text("{not json", encoding="utf-8")
     s3 = Settings.load(p)
-    assert s3.max_buy_price == 75_000
+    assert s3.max_buy_price == 10_000 and s3.min_buy_price == 2_500

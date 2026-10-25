@@ -19,7 +19,8 @@ def load_fixture(name: str):
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings()
+    # pricing/classification tests use the wide legacy band; the band itself is tested separately
+    return Settings(min_buy_price=0, max_buy_price=75_000)
 
 
 @pytest.fixture

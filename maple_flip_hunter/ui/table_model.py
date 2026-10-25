@@ -7,6 +7,7 @@ from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSortFilterProxyMod
 from PySide6.QtGui import QBrush, QColor
 
 from ..collector.normalize import stats_signature
+from ..detection import passes_user_filters
 from ..models import Level, Opportunity
 from .theme import LEVEL_COLORS, MUTED
 
@@ -130,6 +131,7 @@ class OpportunityFilter(QSortFilterProxyModel):
         self.show_levels = {Level.JACKPOT, Level.GOOD, Level.UNCERTAIN}
         self.max_age_s: Optional[float] = None
         self.text = ""
+        self.settings = None            # Settings; when set, rows must pass the user's profitability filters
         self.setSortRole(Qt.UserRole)
         self.setDynamicSortFilter(True)
 
@@ -140,5 +142,7 @@ class OpportunityFilter(QSortFilterProxyModel):
         if self.max_age_s is not None and time.time() - o.listing.source_seen_at > self.max_age_s:
             return False
         if self.text and self.text not in o.listing.item_name.lower() and self.text not in o.listing.seller.lower():
+            return False
+        if self.settings is not None and not passes_user_filters(o.listing, o.valuation, self.settings)[0]:
             return False
         return True

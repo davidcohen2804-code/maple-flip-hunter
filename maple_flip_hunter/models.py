@@ -117,6 +117,7 @@ class Valuation(BaseModel):
     liquidity: str = "UNKNOWN"              # HIGH / MEDIUM / LOW / UNKNOWN
     competitors: int = 0
     cheapest_competitor: Optional[int] = None
+    evidence_age_s: Optional[float] = None   # age of the reference statistics behind this valuation
     explanation: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
 

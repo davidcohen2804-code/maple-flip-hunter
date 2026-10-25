@@ -50,6 +50,7 @@ class PricingEngine:
             return v
 
         now = time.time()
+        v.evidence_age_s = ev.source_data_age_s
         comp_cutoff = now - self.s.comp_window_s
         sold_prices = [c.unit_price for c in ev.comps if c.sold and c.at >= now - self.s.sold_window_s]
         asks = sorted(c.unit_price for c in ev.active_asks if c.at >= comp_cutoff)

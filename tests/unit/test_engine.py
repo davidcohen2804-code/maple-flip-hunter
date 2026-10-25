@@ -31,7 +31,7 @@ class FakeAdapter(BaseAdapter):
 
 
 def build(settings=None, db=None, evidence_fn=None):
-    settings = settings or Settings()
+    settings = settings or Settings(min_buy_price=0, max_buy_price=75_000)
     db = db or Database(":memory:")
     notifier = Notifier(enable_audio=False)
     eng = MarketEngine(settings, db, notifier, adapters=[FakeAdapter(evidence_fn or (lambda l: make_evidence(l)))])
@@ -144,7 +144,7 @@ def test_sold_rows_are_recorded_as_sales_not_candidates():
 
 
 def test_uncertain_hidden_when_disabled():
-    s = Settings(show_uncertain=False)
+    s = Settings(show_uncertain=False, min_buy_price=0, max_buy_price=75_000)
     eng, alerts = build(settings=s, evidence_fn=lambda l: MarketEvidence(item_key=l.item_key, item_name=l.item_name))
     opps = run(eng.ingest([make_listing(price=16_000)]))
     assert opps == [] and alerts == []

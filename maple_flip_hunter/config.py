@@ -14,7 +14,8 @@ log = logging.getLogger(__name__)
 
 class Settings(BaseModel):
     # --- profitability -------------------------------------------------
-    max_buy_price: int = Field(75_000, ge=0, description="Preferred maximum purchase price (mesos)")
+    min_buy_price: int = Field(2_500, ge=0, description="Alert only on listings priced at or above this (mesos)")
+    max_buy_price: int = Field(10_000, ge=0, description="Alert only on listings priced at or below this (mesos)")
     preferred_value_min: int = Field(50_000, ge=0)
     preferred_value_max: int = Field(150_000, ge=0)
     min_net_profit: int = Field(15_000, ge=0, description="Minimum worthwhile estimated net profit")
@@ -27,6 +28,13 @@ class Settings(BaseModel):
     jackpot_min_confidence: float = 0.60
     good_min_confidence: float = 0.45
     uncertain_min_discount: float = 0.30      # show as UNCERTAIN when discount >= this but evidence weak
+
+    # --- QUICK FLIPS ONLY: stricter gate on JACKPOT / GOOD FLIP alerts --------
+    quick_flips_only: bool = False
+    quick_flip_min_net_profit: int = Field(10_000, ge=0, description="Minimum net profit at the CONSERVATIVE sale price, after fee")
+    quick_flip_min_confidence: float = Field(0.80, ge=0.0, le=1.0)
+    quick_flip_max_data_age_s: int = Field(300, ge=30, description="Listing observation AND reference statistics must be at most this old")
+    quick_flip_require_high_liquidity: bool = True
 
     # --- freshness ------------------------------------------------------
     max_listing_age_s: int = Field(900, description="Listings older than this (source observation) are STALE and never alerted")
