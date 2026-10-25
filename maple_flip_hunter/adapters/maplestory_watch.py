@@ -30,7 +30,7 @@ class MapleStoryWatchAdapter(BaseAdapter):
     rate = 1.5
     burst = 3
 
-    def __init__(self, *args: Any, max_item_lookups: int = 40, candidate_discount: float = 0.20, **kwargs: Any):
+    def __init__(self, *args: Any, max_item_lookups: int = 60, candidate_discount: float = 0.20, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.max_item_lookups = max_item_lookups
         self.candidate_discount = candidate_discount
@@ -39,6 +39,7 @@ class MapleStoryWatchAdapter(BaseAdapter):
         self._item_seen: dict[str, float] = {}
         self._seen_keys: dict[str, float] = {}
         self._detail_cache: dict[str, tuple[float, Any]] = {}
+        self.backlog = 0
 
     @staticmethod
     def _as_int(v: Any) -> Optional[int]:
@@ -96,6 +97,9 @@ class MapleStoryWatchAdapter(BaseAdapter):
             if low <= typ * (1 - self.candidate_discount) and seen > self._item_seen.get(name, 0):
                 candidates.append((seen, name))
         candidates.sort(reverse=True)
+        self.backlog = max(0, len(candidates) - self.max_item_lookups)   # unfetched candidates stay candidates
+        if self.backlog:
+            log.warning("msw candidate backlog %d (max %d per cycle)", self.backlog, self.max_item_lookups)
         out: list[Listing] = []
         for seen, name in candidates[: self.max_item_lookups]:
             try:
@@ -118,6 +122,8 @@ class MapleStoryWatchAdapter(BaseAdapter):
             cutoff = now - 6 * 3600
             self._seen_keys = {k: t for k, t in self._seen_keys.items() if t > cutoff}
         self.mark_success(max(0.0, now - newest), len(out))
+        if self.backlog:
+            self.health.detail = f"candidate backlog {self.backlog}"
         return out
 
     async def fetch_evidence(self, listing: Listing, comp_window_s: int = 24 * 3600) -> Optional[MarketEvidence]:

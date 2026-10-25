@@ -162,6 +162,9 @@ class PricingEngine:
         elif v.reference and 0.9 <= (buy * 10) / v.reference <= 1.1:
             v.risks.append("price x10 equals the reference: a dropped digit is plausible")
             score *= 0.7
+        if ev.source_data_age_s is not None and ev.source_data_age_s > self.s.max_evidence_age_s:
+            v.risks.append(f"reference statistics are {ev.source_data_age_s/3600:.1f} h old - market may have moved")
+            score = min(score, 0.50)
         if not listing.seller or listing.seller in ("?", "null", "None"):
             v.risks.append("scanner did not read the shop name - you must find the shop by channel/room")
             score = min(score, 0.55)

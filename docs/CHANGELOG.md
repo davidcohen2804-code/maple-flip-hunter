@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 — 2026-10-25 (review fixes)
+* cozy: persistent shop queue + pagination of shops and deals; nothing dropped when more shops change than one cycle fetches; backlog in health.
+* DB: repricing inferred only across scans; same-scan multi-unit rows are independent listings.
+* Pricing: stale reference statistics (>6 h) cap confidence; maplestory.watch candidate backlog exposed, cap raised to 60.
+* CI: hard gates (Windows runtime audio/notification tests, live tests, packaged-EXE smoke run) before a VERIFIED artifact; `run_live_check.bat` for local verification; tools/ci_report.py.
+* 42 unit tests, 6 Windows runtime tests, 3 live tests. See docs/V2_FIX_REPORT.md.
+
 ## 0.1.0 — 2026-10-25
 * Source audit of six candidate sites + meowdb; two integrated (cozy.markets primary, maplestory.watch secondary).
 * Asynchronous collector with incremental shop polling, deals safety net, rate limiting, back-off, health states.

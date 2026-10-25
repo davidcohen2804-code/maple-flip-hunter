@@ -82,6 +82,8 @@ CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
 
 
 class Database:
+    REPRICE_SCAN_GAP_S = 90.0   # rows observed within this window belong to the same scan
+
     def __init__(self, path: Path | str = ":memory:"):
         self.path = str(path)
         self._lock = threading.RLock()
@@ -122,11 +124,19 @@ class Database:
             # same physical row already known from another source?
             dup = self.conn.execute("SELECT listing_key, source FROM listings WHERE cross_key=? AND sold=0 LIMIT 1",
                                     (cross_key,)).fetchone()
-            # previous price of the same seller+item (repricing)
+            # Repricing detection. Sources expose no per-listing id, so a reprice is inferred only when the
+            # same seller's earlier row for the same item *variant* belongs to an OLDER scan: rows observed in
+            # the same scan (within REPRICE_SCAN_GAP_S) are independent listings (e.g. 3 units at 3 prices).
             prev = self.conn.execute(
-                "SELECT listing_key, price FROM listings WHERE item_key=? AND lower(seller)=lower(?) "
-                "AND listing_key!=? AND sold=0 ORDER BY last_seen_at DESC LIMIT 1",
-                (lst.item_key, lst.seller, lst.listing_key)).fetchone()
+                "SELECT listing_key, price, source_seen_at FROM listings WHERE item_key=? AND lower(seller)=lower(?) "
+                "AND source=? AND listing_key!=? AND sold=0 ORDER BY source_seen_at DESC LIMIT 1",
+                (lst.item_key, lst.seller, lst.source, lst.listing_key)).fetchone()
+            repriced = (prev is not None and prev["price"] != lst.price
+                        and lst.source_seen_at - float(prev["source_seen_at"] or 0) > self.REPRICE_SCAN_GAP_S
+                        and not self.conn.execute(
+                            "SELECT 1 FROM listings WHERE item_key=? AND lower(seller)=lower(?) AND source=? AND price=? "
+                            "AND sold=0 AND source_seen_at>=?", (lst.item_key, lst.seller, lst.source, prev["price"],
+                                                                 lst.source_seen_at - self.REPRICE_SCAN_GAP_S)).fetchone())
             self.conn.execute(
                 """INSERT INTO listings(listing_key, cross_key, source, item_key, item_name, seller, shop_title,
                    channel, fm_room, map_name, price, qty, stock, stats, sold, source_seen_at, source_first_seen_at,
@@ -141,9 +151,9 @@ class Database:
             if dup and dup["source"] != lst.source:
                 self._event(now, lst, "duplicate", None, lst.price)
                 return "duplicate", None
-            if prev and prev["price"] != lst.price:
-                self.conn.execute("UPDATE listings SET sold=0, stock=0, last_seen_at=? WHERE listing_key=?",
-                                  (now, prev["listing_key"]))  # old row superseded
+            if repriced:
+                self.conn.execute("UPDATE listings SET stock=0, last_seen_at=? WHERE listing_key=?",
+                                  (now, prev["listing_key"]))  # old row superseded (kept for history)
                 self._event(now, lst, "repriced", prev["price"], lst.price)
                 return "repriced", prev["price"]
             self._event(now, lst, "new", None, lst.price)

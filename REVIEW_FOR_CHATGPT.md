@@ -1,4 +1,6 @@
-# REVIEW_FOR_CHATGPT — Maple Flip Hunter v0.1.0
+# REVIEW_FOR_CHATGPT — Maple Flip Hunter v0.2.0 (V2)
+
+> **V2 changes in response to the first review:** see `docs/V2_FIX_REPORT.md` (shop queue + pagination, scan-aware repricing, stale-evidence guard, msw backlog, CI hard gates, Windows runtime tests, `run_live_check.bat`). Live/Windows verification status is stated there honestly: **not yet run**.
 
 This file is the hand-off for an independent code review. Everything stated here is backed by code in this
 ZIP or by measurements recorded in `docs/` and `tests/live/last_live_measurements.json`. Where something was not
@@ -19,7 +21,7 @@ A complete Windows desktop application (Python 3.12+, PySide6, httpx, pydantic, 
   fallback), tray toasts, history table.
 * `ui/` — dark dashboard (status strip, filterable table, details panel with icon and pricing explanation, settings
   dialog, tray, jackpot banner, copy buttons, optional Windows startup).
-* `tests/` — 33 synthetic unit tests (all pass) + live integration tests + headless measurement runner.
+* `tests/` — 42 synthetic unit tests, 6 Windows runtime tests, 3 live tests (all pass) + live integration tests + headless measurement runner.
 * `build/windows/` — PyInstaller spec + `build_exe.bat`; `.github/workflows/windows-build.yml` builds and smoke-runs
   `MapleFlipHunter.exe` on a Windows runner.
 
@@ -75,7 +77,7 @@ Budget ≤ 75,000 and net ≥ 15,000 (defaults). JACKPOT: net ≥ 50,000 or (ROI
 toast. UNCERTAIN: shown, silent. Stale (>15 min) never alerts. Same row never alerts twice; repricing creates a new key.
 
 ## 10. Test results, including failures
-* Unit: 33 passed / 0 failed (docs/TEST_RESULTS.md has the per-case table).
+* Unit: 42 passed / 0 failed (docs/TEST_RESULTS.md has the per-case table).
 * Live tests: could not run in the development container (egress proxy 403). They run in the Windows CI job;
   results are attached as CI artifacts and summarized in docs/TEST_RESULTS.md "CI evidence" once available.
   **If that section is still "Pending", treat live behaviour as unverified by automated tests.**
@@ -105,10 +107,8 @@ are never alarmed; the EXE is unsigned (SmartScreen warning); the Windows build 
 ## 15. What ChatGPT should examine first
 1. `collector/engine.py::ingest / gather_evidence / evaluate` — the hot path and the evidence merge.
 2. `pricing/engine.py` — reference selection order, competitive cap, confidence table.
-3. `adapters/cozy.py::poll` — watermark logic (could a repriced row be missed if a shop updates twice within one cycle?)
-   and `fetch_evidence` (variant filter, exclusion of the candidate from its own competitors).
-4. `db/database.py::upsert_listing` — repricing detection uses "latest unsold row of same seller+item"; review the
-   edge case of a seller listing the same item twice at different prices (second row is treated as a reprice).
+3. `adapters/cozy.py::_discover_changed_shops / _drain_pending / _poll_deals` — queue + pagination (V2) and `fetch_evidence` (variant filter, exclusion of the candidate from its own competitors).
+4. `db/database.py::upsert_listing` — V2 scan-aware repricing (90 s same-scan window); sources expose no listing id.
 5. `detection/detector.py` — thresholds vs. spec §9.
 6. `tests/live/test_live_sources.py` and the CI artifacts — are the measured latencies acceptable?
 

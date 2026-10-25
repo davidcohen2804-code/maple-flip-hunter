@@ -32,6 +32,7 @@ class Settings(BaseModel):
     max_listing_age_s: int = Field(900, description="Listings older than this (source observation) are STALE and never alerted")
     comp_window_s: int = Field(24 * 3600, description="Window for competing active listings")
     sold_window_s: int = Field(7 * 24 * 3600, description="Window for completed-sale comparables")
+    max_evidence_age_s: int = Field(6 * 3600, description="Reference stats older than this cap confidence at 0.5")
 
     # --- alerts ---------------------------------------------------------
     notifications_enabled: bool = True
@@ -48,7 +49,7 @@ class Settings(BaseModel):
     source_cozy_max_shops_per_cycle: int = 25
     source_msw_enabled: bool = True
     source_msw_interval_s: float = Field(180.0, ge=60.0)
-    source_msw_max_item_lookups_per_cycle: int = 40
+    source_msw_max_item_lookups_per_cycle: int = 60
     source_msw_candidate_discount: float = 0.20
 
     # --- retention ------------------------------------------------------

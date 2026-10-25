@@ -2,7 +2,7 @@
 
 ## Synthetic unit tests — executed 2026-10-25 (Linux x86-64, Python 3.13.17, PySide6 6.12.0, QT_QPA_PLATFORM=offscreen)
 
-Command: `python -m pytest tests/unit -q` → **33 passed, 0 failed, 0 skipped** (2.7 s).
+Command: `python -m pytest tests/unit -q` → **42 passed, 0 failed** (V2, 3.1 s); Windows runtime suite (6) and live suite (3) skipped off-Windows / without MFH_LIVE.
 
 | Spec case (§15) | Test | Result |
 |---|---|---|
@@ -21,6 +21,7 @@ Command: `python -m pytest tests/unit -q` → **33 passed, 0 failed, 0 skipped**
 | 13. Alert deduplication | `test_13_alert_deduplication_across_restarts` — persisted in SQLite | PASS |
 | 14. Windows notification behaviour | `test_alert_history_and_toast_callback`, `test_windows_audio_backend` (backend selection; playback exercised on the Windows CI runner), sound synthesis | PASS (silent backend on Linux) |
 | 15. Database recovery / persistence | `test_15_database_persistence_and_recovery` — reopen file DB, counts, retention cleanup | PASS |
+| V2 | collection coverage: 60 changed shops / 25 per cycle → all fetched; shop pagination; deals pagination; backlog reporting; msw candidate carry-over; same-scan multi-unit rows independent; stale reference stats cap confidence | PASS |
 | extra | dropped-digit guard (real pattern: same shop 74,999 / 7,499 → UNCERTAIN), unknown shop name caps confidence (GOOD max), adapter parsing of recorded real responses (cozy shops/listings/deals/item, msw index/item), normalization, settings round-trip, token bucket, prefilter, sold rows → sales, UNCERTAIN hidden | PASS |
 
 Measured in `test_11`: 20 evaluations in well under 1 s total; per-evaluation local analysis 0–3 ms (no network in tests).
@@ -39,4 +40,4 @@ Local Linux build of the same PyInstaller spec: `dist/MapleFlipHunter` (293 MB o
 produced by the CI job; it has **not** been claimed as tested on Windows until the CI evidence below exists.
 
 ## CI evidence (Windows)
-_Pending — populated from the first successful GitHub Actions run (see REVIEW_FOR_CHATGPT.md §10–11)._
+_Pending — no Windows run has been executed yet. See docs/V2_FIX_REPORT.md §3 for the two ways to produce it (`windows-build` workflow or `run_live_check.bat`). The release is UNVERIFIED until `reports/VERIFICATION_REPORT.md` exists._

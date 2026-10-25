@@ -38,8 +38,9 @@ Target: < 2 s local processing after a complete row — measured 0–3 ms CPU pl
 when cold.
 
 ## Incremental collection
-* cozy: `/api/shops?sort=last_at` is a cheap "what changed" list; only shops whose `last_at` moved are fetched
-  (≤25 per 10 s cycle), plus one `/api/deals seen=1h` page. Watermarks prevent re-emitting rows.
+* cozy: `/api/shops?sort=last_at` is a cheap "what changed" list (paginated while a whole page is new); every changed
+  shop enters a persistent queue and ≤25 are fetched per 10 s cycle, newest first — the rest wait, never dropped.
+  `/api/deals seen=1h` is paginated until the watermark. Per-shop watermarks prevent re-emitting rows.
 * maplestory.watch: one index fetch per 3 min; item pages only for items whose `lowest` is ≥20 % under
   `typical` and whose `seen` moved (≤40 per cycle).
 * Evidence (`/api/items/{id}`, sightings) is cached 5 min per item/variant.

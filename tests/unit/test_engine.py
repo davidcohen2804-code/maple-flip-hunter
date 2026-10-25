@@ -66,11 +66,10 @@ def test_4_stale_listing_is_not_alerted():
 
 def test_7_price_reduction_creates_fresh_alert_same_price_does_not():
     eng, alerts = build()
-    a = make_listing(price=70_000)         # not profitable: 114,000*0.97-70,000 = 40,580 -> GOOD actually; use higher
-    a = make_listing(price=100_000)        # over budget -> no alert
+    a = make_listing(price=100_000, age_s=600)   # over budget -> no alert (observed in an earlier scan)
     run(eng.ingest([a]))
     assert alerts == []
-    b = make_listing(price=16_000)         # same seller/item re-listed cheaper -> new key -> alert
+    b = make_listing(price=16_000, age_s=1)      # same seller/item re-listed cheaper in a later scan -> alert
     run(eng.ingest([b]))
     assert len(alerts) == 1
     run(eng.ingest([b]))                   # same row seen again -> no duplicate alert
@@ -149,3 +148,31 @@ def test_uncertain_hidden_when_disabled():
     eng, alerts = build(settings=s, evidence_fn=lambda l: MarketEvidence(item_key=l.item_key, item_name=l.item_name))
     opps = run(eng.ingest([make_listing(price=16_000)]))
     assert opps == [] and alerts == []
+
+
+def test_same_seller_several_units_at_different_prices_in_one_scan_are_independent():
+    """ChatGPT review item 2: a shop showing the same item 3 times at 3 prices is 3 listings, not 2 reprices."""
+    eng, alerts = build()
+    base = make_listing(price=16_000)
+    rows = [base.model_copy(update={"price": p, "listing_key": base.listing_key.rsplit("|", 1)[0] + f"|{p}",
+                                    "source_seen_at": base.source_seen_at}) for p in (16_000, 17_000, 18_000)]
+    run(eng.ingest(rows))
+    assert eng.metrics.listings_new == 3 and eng.metrics.listings_repriced == 0
+    assert eng.db.listing_count() == 3            # three independent rows, none marked superseded
+    assert len(alerts) >= 1                       # the other units count as live competitors (conservative)
+    assert eng.db.active_asks(base.item_key, 0).__len__() == 3
+    # a LATER scan (new timestamp) with one of them cheaper -> that is a reprice
+    later = base.model_copy(update={"price": 15_000, "listing_key": base.listing_key.rsplit("|", 1)[0] + "|15000",
+                                    "source_seen_at": base.source_seen_at + 600})
+    run(eng.ingest([later]))
+    assert eng.metrics.listings_repriced == 1
+
+
+def test_stale_reference_statistics_cap_confidence():
+    from maple_flip_hunter.models import Level
+
+    eng, alerts = build(evidence_fn=lambda l: make_evidence(l, age_s=8 * 3600))
+    opps = run(eng.ingest([make_listing(price=16_000)]))
+    assert opps[0].valuation.confidence <= 0.5
+    assert any("h old" in r for r in opps[0].valuation.risks)
+    assert opps[0].level == Level.GOOD            # still alerted, but never a JACKPOT on stale references
