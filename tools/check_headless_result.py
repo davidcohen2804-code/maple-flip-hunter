@@ -9,7 +9,13 @@ online = [h["name"] for h in res["health"] if h["status"] in ("ONLINE", "STALE")
 print(f"scanner_state={res['scanner_state']} online={online} ingested={m['listings_ingested']} "
       f"new={m['listings_new']} evaluations={m['evaluations']} alerts={m['alerts']} "
       f"source_age_avg={m.get('source_age_at_ingest_avg_s')} analysis_ms_avg={m.get('analysis_ms_avg')}")
+blocked = [h["name"] for h in res["health"] if h["status"] in ("AUTH REQUIRED", "UNAVAILABLE")]
+print(f"blocked/unavailable sources: {blocked}")
 if not online or m["listings_ingested"] <= 0 or res["scanner_state"] not in ("LIVE", "DEGRADED"):
-    print("GATE FAILED: packaged EXE did not receive live market data")
+    print("GATE FAILED: packaged EXE did not receive live market data from any source")
     sys.exit(1)
-print("GATE PASSED")
+bad = [a for a in res.get("alerts", []) if a.get("level") == "JACKPOT" and a.get("listing_age_s", 0) > 900]
+if bad:
+    print(f"GATE FAILED: JACKPOT alert on stale data: {bad}")
+    sys.exit(1)
+print("GATE PASSED (scanner kept running with sources " + ", ".join(online) + (f"; {', '.join(blocked)} blocked" if blocked else "") + ")")

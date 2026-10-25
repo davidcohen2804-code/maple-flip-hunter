@@ -30,16 +30,24 @@ def _save(key: str, value):
 def test_cozy_live_freshness():
     from maple_flip_hunter.adapters import CozyAdapter
 
+    from maple_flip_hunter.adapters.base import FetchError
+
     a = CozyAdapter()
     t0 = time.perf_counter()
-    shops = run(a.fetch_json("/api/shops", {"page": 1, "size": 100, "sort": "last_at", "dir": "desc"}))
+    try:
+        shops = run(a.fetch_json("/api/shops", {"page": 1, "size": 100, "sort": "last_at", "dir": "desc"}))
+    except FetchError as exc:
+        _save("cozy", {"status": "BLOCKED" if "403" in str(exc) else "UNREACHABLE", "error": str(exc),
+                       "note": "cozy.markets refused this network (Cloudflare). Not bypassed. Re-test from a home PC with run_live_check.bat."})
+        run(a.aclose())
+        pytest.skip(f"cozy.markets BLOCKED from this network: {exc}")
     ms = (time.perf_counter() - t0) * 1000
     now = time.time()
     ages = sorted(now - float(s["last_at"]) for s in shops["rows"])
     deals = run(a.fetch_json("/api/deals", {"page": 1, "size": 100, "kind": "under-fm", "seen": "1h", "sort": "at", "dir": "desc"}))
     dages = sorted(now - float(r["at"]) for r in deals["rows"])
     listings = run(a.poll())
-    _save("cozy", {"http_ms": round(ms), "newest_shop_age_s": round(ages[0]) if ages else None,
+    _save("cozy", {"status": "OK", "http_ms": round(ms), "newest_shop_age_s": round(ages[0]) if ages else None,
                    "median_shop_age_s_top100": round(ages[len(ages) // 2]) if ages else None,
                    "newest_deal_age_s": round(dages[0]) if dages else None, "deals_total_1h": deals.get("total"),
                    "first_poll_listings": len(listings), "health": a.health.model_dump()})
@@ -72,5 +80,10 @@ def test_end_to_end_live_run_measures_alert_latency():
                          "coverage": res["coverage"], "n_opportunities": len(res["opportunities"]),
                          "opportunities_sample": res["opportunities"][:10], "alerts": res["alerts"][:10],
                          "health": res["health"]})
+    online = [h["name"] for h in res["health"] if h["status"] in ("ONLINE", "STALE")]
+    assert online, f"no source delivered data: {[(h['name'], h['status'], h['last_error']) for h in res['health']]}"
     assert res["metrics"]["listings_ingested"] > 0
     assert res["scanner_state"] in ("LIVE", "DEGRADED")
+    # no JACKPOT alarm may ever come from a stale observation
+    for a in res["alerts"]:
+        assert not (a["level"] == "JACKPOT" and a.get("listing_age_s", 0) > 900), a

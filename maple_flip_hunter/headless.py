@@ -25,7 +25,9 @@ def run(seconds: float, db: str = ":memory:", audio: bool = False) -> dict:
     engine.on("alert", lambda o, lvl, t, b: alerts.append({"level": lvl, "item": o.listing.item_name, "buy": o.listing.price,
                                                             "quick": o.valuation.quick, "net": o.valuation.net_profit,
                                                             "source_to_alert_s": (o.notified_at or 0) - o.listing.source_seen_at,
-                                                            "location": o.listing.location, "shop": o.listing.seller}))
+                                                            "location": o.listing.location, "shop": o.listing.seller,
+                                                            "listing_age_s": round(o.listing.source_age_s),
+                                                            "confidence": o.valuation.confidence}))
     engine.on("opportunity", lambda o: opps.append({"level": o.level.value, "item": o.listing.item_name, "buy": o.listing.price,
                                                    "quick": o.valuation.quick, "net": o.valuation.net_profit,
                                                    "conf": o.valuation.confidence, "age_s": round(o.listing.source_age_s)}))

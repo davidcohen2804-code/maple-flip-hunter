@@ -26,7 +26,19 @@ def junit_summary(p: Path) -> str:
 
 def main() -> None:
     rep = Path(sys.argv[1])
-    out = [f"# Maple Flip Hunter — verification report", "",
+    status_lines = []
+    live_p = Path("tests/live/last_live_measurements.json")
+    live_d = json.loads(live_p.read_text()) if live_p.exists() else {}
+    cz = live_d.get("cozy", {})
+    status_lines.append(f"* cozy.markets: **{cz.get('status', 'NOT TESTED')}**" + (f" — {cz.get('error')}" if cz.get("error") else "") +
+                        (" (newest shop scan age %s s)" % cz.get("newest_shop_age_s") if cz.get("status") == "OK" else ""))
+    msw = live_d.get("msw", {})
+    status_lines.append(f"* maplestory.watch: **{'OK' if msw else 'NOT TESTED'}**" + (f" — {msw.get('index_items')} items, index age {msw.get('index_age_s')} s, newest listing {msw.get('newest_listing_age_s')} s" if msw else ""))
+    wx0 = rep / "windows-results.xml"
+    audio = "NOT VERIFIED (no audio device on this machine)" if wx0.exists() and "NO AUDIO OUTPUT DEVICE" in wx0.read_text(encoding="utf-8", errors="ignore") else ("VERIFIED" if wx0.exists() else "NOT TESTED")
+    status_lines.append(f"* audio playback: **{audio}**")
+    overall = "FULLY VERIFIED" if cz.get("status") == "OK" and audio == "VERIFIED" else "PARTIALLY VERIFIED — see items above"
+    out = [f"# Maple Flip Hunter — verification report", "", f"## Overall status: **{overall}**", "", *status_lines, "",
            f"Generated {time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())} on {platform.platform()} "
            f"(Python {platform.python_version()}).", "",
            "## Test suites", "", "| file | tests | failed | skipped |", "|---|---|---|---|"]

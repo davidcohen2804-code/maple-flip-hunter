@@ -59,7 +59,7 @@ jobs:
           MFH_LIVE_SECONDS: "120"
         run: python -m pytest tests/live -q -rA --junitxml=reports/live-results.xml
 
-      - name: Smoke-run the built EXE headless for 90 s against live sources
+      - name: Smoke-run the built EXE headless for 90 s against live sources (must keep scanning with any blocked source)
         shell: pwsh
         run: |
           $p = Start-Process -FilePath "dist\MapleFlipHunter\MapleFlipHunter.exe" -ArgumentList "--headless","--seconds","90","--out","reports\exe_headless_result.json" -PassThru -Wait
@@ -68,18 +68,19 @@ jobs:
           if (-not (Test-Path reports\exe_headless_result.json)) { "NO RESULT FILE"; exit 1 }
           python tools/check_headless_result.py reports\exe_headless_result.json
 
-      - name: Write VERIFIED report
+      - name: Write verification report and package the home-test build
         shell: pwsh
         run: |
           python tools/ci_report.py reports > reports\VERIFICATION_REPORT.md
           Copy-Item reports\VERIFICATION_REPORT.md dist\MapleFlipHunter\VERIFICATION_REPORT.md
-          Compress-Archive -Force -Path dist\MapleFlipHunter\* -DestinationPath MapleFlipHunter-win64-VERIFIED.zip
+          Copy-Item README_HE.md dist\MapleFlipHunter\README_HE.md
+          Compress-Archive -Force -Path dist\MapleFlipHunter\* -DestinationPath MapleFlipHunter-win64.zip
           Get-Content reports\VERIFICATION_REPORT.md
 
       - uses: actions/upload-artifact@v4
         with:
-          name: MapleFlipHunter-win64-VERIFIED
-          path: MapleFlipHunter-win64-VERIFIED.zip
+          name: MapleFlipHunter-win64
+          path: MapleFlipHunter-win64.zip
 
       - uses: actions/upload-artifact@v4
         if: always()
