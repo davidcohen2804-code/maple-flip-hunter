@@ -78,6 +78,9 @@ CREATE TABLE IF NOT EXISTS source_status (
     name TEXT PRIMARY KEY, at REAL, payload TEXT
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS availability (
+    listing_key TEXT PRIMARY KEY, status TEXT, observed_at REAL, checked_at REAL, note TEXT, source TEXT
+);
 """
 
 
@@ -106,6 +109,8 @@ class Database:
             self.conn.close()
 
     # ------------------------------------------------------------ listings
+    last_repriced_from: Optional[str] = None     # listing_key of the row a 'repriced' result replaced
+
     def upsert_listing(self, lst: Listing, cross_key: str) -> tuple[str, Optional[int]]:
         """Insert or refresh a listing. Returns (event_kind, old_price) where kind is
         'new' | 'repriced' | 'seen' | 'duplicate' (same row seen by another source)."""
@@ -165,6 +170,7 @@ class Database:
                 self.conn.execute("UPDATE listings SET stock=0, last_seen_at=? WHERE listing_key=?",
                                   (now, prev["listing_key"]))  # old row superseded (kept for history)
                 self._event(now, lst, "repriced", prev["price"], lst.price)
+                self.last_repriced_from = prev["listing_key"]
                 return "repriced", prev["price"]
             self._event(now, lst, "new", None, lst.price)
             return "new", None
@@ -222,6 +228,13 @@ class Database:
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (l.listing_key, l.item_key, l.item_name, opp.level.value, l.price, v.reference, v.quick, v.net_profit,
              v.roi, v.confidence, opp.detected_at, opp.notified_at, opp.analysis_ms, opp.model_dump_json()))
+
+    def save_availability(self, listing_key: str, status: str, observed_at: float, checked_at: float, note: str, source: str) -> None:
+        self._exec("INSERT OR REPLACE INTO availability(listing_key, status, observed_at, checked_at, note, source) VALUES (?,?,?,?,?,?)",
+                   (listing_key, status, observed_at, checked_at, note, source))
+
+    def availability(self, listing_key: str) -> Optional[sqlite3.Row]:
+        return self._exec("SELECT * FROM availability WHERE listing_key=?", (listing_key,)).fetchone()
 
     def was_alerted(self, listing_key: str) -> bool:
         row = self._exec("SELECT notified_at FROM opportunities WHERE listing_key=?", (listing_key,)).fetchone()

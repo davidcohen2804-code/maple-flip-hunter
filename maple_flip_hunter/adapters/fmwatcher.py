@@ -59,7 +59,10 @@ class FMWatcherAdapter(BaseAdapter):
         self._store_mtime = 0.0
         self._csv_mtime = 0.0
         self._seen: dict[str, float] = {}       # listing_key -> last 'last' timestamp handed out
+        self._latest: dict[str, tuple[str, float, str]] = {}   # listing_key -> (status, at, note) from the last file read
         self.file_used = ""
+        self.verify_supported = True
+        self.verify_limit_note = "only shops you re-open are re-checked; others stay UNVERIFIED"
         if self.directory is None:
             self._set_status(SourceStatus.UNSUPPORTED, "FM Watcher folder not set (Settings → Sources)")
 
@@ -93,6 +96,12 @@ class FMWatcherAdapter(BaseAdapter):
             open_count = int(o.get("nu", 0) or 0)
             sold = bool(o.get("so")) and open_count == 0
             if open_count <= 0 and not sold:
+                qty0 = int(qty or 1) or 1
+                unit0 = int(round(float(price) / qty0))
+                st0 = _stats(o.get("x"))
+                lk0 = listing_key(self.name, item_key(str(item), "Equip" if st0 or o.get("xj") else None, st0), str(seller),
+                                  int(o["c"]) if o.get("c") else None, unit0)
+                self._latest[lk0] = ("REMOVED", last, "your latest scan of this shop no longer shows it")
                 continue
             qty = int(qty or 1) or 1
             unit = int(round(float(price) / qty))
@@ -105,6 +114,8 @@ class FMWatcherAdapter(BaseAdapter):
             room_txt = str(o.get("r") or "")
             room = parse_fm_room(room_txt)
             lk = listing_key(self.name, ik, str(seller), ch, unit)
+            self._latest[lk] = (("SOLD", last, "your scan saw the slot sold") if sold
+                                else ("ACTIVE", last, "open in your latest scan of this shop"))
             if self._seen.get(lk) == last:
                 continue            # nothing new since we last handed this row out
             self._seen[lk] = last
@@ -119,6 +130,15 @@ class FMWatcherAdapter(BaseAdapter):
             cutoff = now - self.max_age_s
             self._seen = {k: t for k, t in self._seen.items() if t > cutoff}
         return out
+
+    async def verify(self, listing: Listing) -> Optional[tuple[str, float, str]]:
+        hit = self._latest.get(listing.listing_key)
+        if hit is None:
+            return None
+        status, at, note = hit
+        if status == "ACTIVE" and at <= listing.source_seen_at:
+            return "ACTIVE", at, note          # same observation we alerted on: confirms nothing newer
+        return status, at, note
 
     def _rows_from_csv(self, path: Path) -> list[Listing]:
         now = time.time()

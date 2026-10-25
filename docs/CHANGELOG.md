@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.2 — 2026-10-26 (availability tracking — without slowing alerts)
+* **Alert path unchanged and still first**: sound + floating card fire the moment a deal passes the filters; no
+  network request is made before them (test: the sound timestamp precedes the first verification request).
+* **Background verifier** (own asyncio task + priority queue, alerted deals first, ≥ 120 s between re-checks of
+  the same row, stops after 2 h): asks the listing's source whether it is still there using a *separate* rate
+  budget (maplestory.watch: ≤ 1 request / 2 s, item page cached 60 s locally) so discovery polls are never delayed.
+* Statuses: **ACTIVE** (last seen by a source — not a promise), **UNVERIFIED** (no current confirmation, with the
+  reason), **REMOVED** (source reports closed / gone / seller repriced), **SOLD** (explicit sold-out flag only).
+  Absence from a partial scan is never treated as sold. Re-appearance in a later poll → ACTIVE; a reprice marks the
+  old row REMOVED. Shown as *Availability* + *Last verified* in the details panel and in the row tooltip.
+* Verified REMOVED/SOLD rows leave the active table (kept in the database, table `availability`); the floating card
+  updates its text ("⛔ SOLD — … Don't go.") with **no extra sound**.
+* Per-source capability: maplestory.watch (soldOut/closed flags, ≤ 5 min cache), Club FM (sold/old in the latest
+  snapshot, 5–9 min behind), FM Watcher (your own re-scan of that shop), cozy.markets: cannot verify (blocked) —
+  rows stay UNVERIFIED with that note rather than a misleading status.
+* Tests: alert-before-verify ordering, all four statuses, reprice/re-appearance, explicit-flags-only parsing,
+  limitation reporting, load (500 alerts + slow verifier: polls keep their cadence, a new deal still alerts < 3 s),
+  popup/table updates. 93 unit tests.
+
+
 ## 0.7.1 — 2026-10-26 (table: 6 columns for real-time deal spotting)
 * Opportunity table columns: **Item · Buy · Quick Sale · Net Profit · Age · Location** (thousands separators,
   right-aligned numbers, Item stretches, no horizontal scrollbar at 1366+). Net profit green when positive, red when

@@ -100,13 +100,14 @@ class BaseAdapter:
         self.health.rate_limited_until = None
 
     # ------------------------------------------------------------------ http
-    async def fetch_json(self, path: str, params: Optional[dict[str, Any]] = None, retries: int = 3) -> Any:
+    async def fetch_json(self, path: str, params: Optional[dict[str, Any]] = None, retries: int = 3,
+                         bucket: Optional["TokenBucket"] = None) -> Any:
         url = path if path.startswith("http") else f"{self.base_url}{path}"
         delay = self.retry_base_delay
         for attempt in range(retries + 1):
             if self.health.rate_limited_until and time.time() < self.health.rate_limited_until:
                 raise RateLimited(self.health.rate_limited_until - time.time())
-            await self.bucket.acquire()
+            await (bucket or self.bucket).acquire()
             if self.closed or self.client.is_closed:
                 raise FetchError("adapter is stopped (HTTP client closed)")
             t0 = time.perf_counter()
@@ -166,6 +167,16 @@ class BaseAdapter:
             self._set_status(SourceStatus.RATE_LIMITED, str(exc))
         elif self.health.status != SourceStatus.AUTH_REQUIRED:
             self._set_status(SourceStatus.UNAVAILABLE, str(exc)[:120])
+
+    # ---------------------------------------------------------------- availability
+    verify_supported: bool = False          # True when verify() can answer from this source's data
+    verify_limit_note: str = "this source cannot confirm whether a listing is still in the shop"
+
+    async def verify(self, listing: Listing) -> Optional[tuple[str, float, str]]:
+        """Background availability check for one listing. Returns (status, observed_at, note) with status
+        ACTIVE / REMOVED / SOLD, or None when this source cannot tell (absent from a partial scan is NOT 'sold').
+        Must never be called on the alert path and must use its own rate budget."""
+        return None
 
     def next_delay(self) -> float:
         """Seconds to wait before the next poll (adapters may shorten it while they have a backlog)."""

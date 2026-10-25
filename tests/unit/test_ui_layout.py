@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 
 import pytest
 
@@ -204,3 +205,23 @@ def test_main_window_resizes_freely_without_clipping_and_remembers_layout(app, t
     r = fit_on_screen(QRect(-5000, -5000, 1366, 728), w2._screen_rect(), 1.0)
     assert w2._screen_rect().contains(r)
     w2.tray.hide(); w2.close()
+
+
+def test_gone_rows_leave_the_active_table_and_details_show_last_verified(app, tmp_path):
+    w, eng = _window(tmp_path)
+    w.show()
+    opp = asyncio.new_event_loop().run_until_complete(eng.ingest([make_listing(name="Gone Item", price=8_000, ref=42_000, seller="S", age_s=5)]))[0]
+    w.model.upsert(opp); app.processEvents()
+    assert w.proxy.rowCount() == 1
+    w.table.selectRow(0); app.processEvents()
+    assert "Availability" in w.details.toPlainText() and "never" in w.details.toPlainText()
+    eng._set_availability(opp, "SOLD", time.time(), "slot sold", "test")
+    w.on_availability(opp, "SOLD", "slot sold", True); app.processEvents()
+    assert w.proxy.rowCount() == 0 and w.model.rowCount() == 1          # hidden from the active table, kept in memory/DB
+    assert eng.db.availability(opp.key)["status"] == "SOLD"
+    w.proxy.show_gone = True; w.proxy.invalidateFilter(); app.processEvents()
+    assert w.proxy.rowCount() == 1
+    w.table.selectRow(0); app.processEvents()
+    txt = w.details.toPlainText()
+    assert "SOLD" in txt and "Last verified" in txt and "slot sold" in txt
+    w.tray.hide(); w.close()

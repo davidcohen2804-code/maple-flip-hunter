@@ -131,10 +131,18 @@ class Opportunity(BaseModel):
     notified_at: Optional[float] = None
     stale: bool = False
     reasons: list[str] = Field(default_factory=list)
+    # availability (verified in the background AFTER the alert; never delays it)
+    availability: str = "UNVERIFIED"           # ACTIVE / UNVERIFIED / REMOVED / SOLD
+    last_verified_at: Optional[float] = None    # when a source last confirmed/denied the listing
+    availability_note: str = ""
 
     @property
     def key(self) -> str:
         return self.listing.listing_key
+
+    @property
+    def gone(self) -> bool:
+        return self.availability in ("REMOVED", "SOLD")
 
 
 class SourceHealth(BaseModel):

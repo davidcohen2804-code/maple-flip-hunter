@@ -39,6 +39,10 @@ class MapleStoryWatchAdapter(BaseAdapter):
         self._item_seen: dict[str, float] = {}
         self._seen_keys: dict[str, float] = {}
         self._detail_cache: dict[str, tuple[float, Any]] = {}
+        from .base import TokenBucket
+        self.verify_bucket = TokenBucket(0.5, 2)     # availability checks: ≤ 1 request / 2 s, never the discovery budget
+        self.verify_supported = True
+        self.verify_limit_note = "maplestory.watch item pages are cached 5 min: a confirmation can be up to 5 min old"
         self.backlog = 0
         self._index_fetched_at = 0.0
 
@@ -83,6 +87,35 @@ class MapleStoryWatchAdapter(BaseAdapter):
         self.index = {it["name"]: it for it in items if it.get("name")}
         self.index_at = float((data or {}).get("at") or time.time())
         return len(self.index)
+
+    async def verify(self, listing: Listing) -> Optional[tuple[str, float, str]]:
+        """Re-read the item page (cached ≤ 300 s by the site). Explicit flags only: soldOut → SOLD, closed → REMOVED,
+        same seller at another price → REMOVED (repriced), present & open → ACTIVE. Absent from the page → None."""
+        name = listing.item_name
+        hit = self._detail_cache.get(name)
+        if hit and time.time() - hit[0] < 60:
+            data = hit[1]
+        else:
+            data = await self.fetch_json("/api/item", {"name": name}, retries=1, bucket=self.verify_bucket)
+            self._detail_cache[name] = (time.time(), data)
+        rows = (data or {}).get("listings") or []
+        seller = (listing.seller or "").lower()
+        mine = [r for r in rows if (r.get("seller") or "").lower() == seller
+                and (listing.channel is None or self._as_int(r.get("channel")) in (None, listing.channel))]
+        if not mine:
+            return None
+        same_price = [r for r in mine if self._as_int(r.get("unit") or r.get("price")) == listing.price]
+        if same_price:
+            r = max(same_price, key=lambda x: float(x.get("seen") or 0))
+            at = float(r.get("seen") or time.time())
+            if r.get("soldOut"):
+                return "SOLD", at, "source reports the slot sold out"
+            if r.get("closed"):
+                return "REMOVED", at, "source reports the shop closed / listing gone"
+            return "ACTIVE", at, "seen in the shop by the source"
+        newest = max(mine, key=lambda x: float(x.get("seen") or 0))
+        np_ = self._as_int(newest.get("unit") or newest.get("price"))
+        return "REMOVED", float(newest.get("seen") or time.time()), f"seller now lists it at {np_:,}" if np_ else "listing replaced"
 
     def next_delay(self) -> float:
         return 2.0 if self.backlog else self.interval_s   # keep draining candidates in short chunks

@@ -98,3 +98,21 @@ def test_popup_contents_copy_mute_and_stays_until_ok(app, tmp_path):
     b.show_stacked()
     assert b.y() > a.y()
     a.close(); b.close()
+
+
+def test_popup_updates_when_listing_is_gone_without_a_second_sound(app, tmp_path):
+    n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
+    eng = _engine(tmp_path, n)
+    opp = asyncio.new_event_loop().run_until_complete(eng.ingest([make_listing(price=8_000, ref=42_000, seller="ShopY", age_s=5)]))[0]
+    for old in list(AlertPopup._open):
+        old.close()
+    pop = AlertPopup(opp, "JACKPOT")
+    pop.show_stacked()
+    assert "UNVERIFIED" in pop.avail.text()
+    plays = len(n.sound_latency_ms)
+    pop.set_availability("ACTIVE", time.time(), "seen in the shop by the source")
+    assert pop.avail.text().startswith("✅ ACTIVE") and "not a promise" in pop.avail.text()
+    pop.set_availability("SOLD", time.time(), "slot sold out")
+    assert pop.avail.text().startswith("⛔ SOLD") and "Don't go" in pop.avail.text() and pop.btn_ok.text() == "OK (gone)"
+    assert len(n.sound_latency_ms) == plays and pop.isVisible()        # no extra sound, card stays until OK
+    pop.close()

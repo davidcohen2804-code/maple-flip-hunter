@@ -37,7 +37,7 @@ class MarketEngine:
         self._adapters_from_settings = adapters is None
         self.adapters: list[BaseAdapter] = adapters if adapters is not None else self._default_adapters()
         self._callbacks: dict[str, list[Callback]] = {k: [] for k in
-                                                      ("listing", "opportunity", "alert", "health", "log")}
+                                                      ("listing", "opportunity", "alert", "health", "log", "availability")}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._tasks: list[asyncio.Task] = []
@@ -45,6 +45,13 @@ class MarketEngine:
         self.scanner_state = "OFFLINE"
         self.last_data_at: Optional[float] = None
         self._eval_lock: Optional[asyncio.Lock] = None
+        # availability verification: its own queue + task, fed AFTER alerts; never on the alert path
+        self._verify_q: Optional[asyncio.PriorityQueue] = None
+        self._verify_seq = 0
+        self._verify_next: dict[str, float] = {}        # listing_key -> earliest next check
+        self._opps: dict[str, Opportunity] = {}          # live opportunities by key (for re-checks / re-appearance)
+        self.verify_min_interval_s = 120.0
+        self.verify_max_age_s = 2 * 3600                 # stop re-checking rows older than this
 
     # ----------------------------------------------------------- wiring
     def _default_adapters(self) -> list[BaseAdapter]:
@@ -149,6 +156,8 @@ class MarketEngine:
             a._stop = asyncio.Event()  # fresh event bound to this loop (restart support)
         self._tasks = [asyncio.create_task(a.run(self._make_handler(a))) for a in self.adapters]
         self._tasks.append(asyncio.create_task(self._housekeeping()))
+        self._verify_q = asyncio.PriorityQueue()
+        self._tasks.append(asyncio.create_task(self._verify_loop()))
         try:
             await asyncio.wait_for(asyncio.gather(*self._tasks, return_exceptions=True), timeout=None)
         finally:
@@ -236,6 +245,7 @@ class MarketEngine:
                 self.metrics.errors += 1
                 continue
             if kind == "seen":
+                self._reappeared(lst)
                 continue
             if kind == "duplicate":
                 self.metrics.listings_duplicate += 1
@@ -244,6 +254,9 @@ class MarketEngine:
                 self.metrics.listings_new += 1
             else:
                 self.metrics.listings_repriced += 1
+                old = self._opps.get(self.db.last_repriced_from or "")
+                if old is not None and not old.gone:
+                    self._set_availability(old, "REMOVED", lst.source_seen_at, f"seller changed the price to {lst.price:,}", lst.source)
             self.metrics.last_new_listing_at = now
             self._emit("listing", lst, kind)
             if not self._prefilter(lst):
@@ -343,6 +356,7 @@ class MarketEngine:
         if opp.level == Level.UNCERTAIN and not self.settings.show_uncertain:
             return None
         self.db.save_opportunity(opp)
+        self._opps[opp.key] = opp
         self._emit("opportunity", opp)
         sound = self.detector.should_alert(opp, self.db.was_alerted(opp.key))
         if sound and self.settings.notifications_enabled:
@@ -369,6 +383,7 @@ class MarketEngine:
             log.exception("notifier failed")
         self.db.add_notification(opp.key, level, title, body, sound or "silent")
         self._emit("alert", opp, level, title, body)
+        self.queue_verification(opp, priority=0)       # AFTER the alert: background availability check first in line
 
     def sound_for(self, opp: Opportunity) -> Optional[str]:
         """Sound id for this alert, chosen by the computed net profit (quick-sale net; the figure shown in the
@@ -377,6 +392,96 @@ class MarketEngine:
         if tier is None or not tier.enabled:
             return None
         return tier.sound
+
+    # ----------------------------------------------------------- availability
+    def queue_verification(self, opp: Opportunity, priority: int = 1, delay_s: float = 0.0) -> None:
+        """Enqueue a background availability check. Priority 0 = alerted deals, 1 = other opportunities."""
+        if self._verify_q is None or opp.listing.source == "test":
+            return
+        self._verify_seq += 1
+        try:
+            self._verify_q.put_nowait((priority, time.time() + delay_s, self._verify_seq, opp.key))
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _adapter_for(self, source: str) -> Optional[BaseAdapter]:
+        return next((a for a in self.adapters if a.name == source), None)
+
+    def _set_availability(self, opp: Opportunity, status: str, observed_at: float, note: str, source: str) -> None:
+        changed = status != opp.availability
+        opp.availability, opp.last_verified_at, opp.availability_note = status, observed_at, note
+        try:
+            self.db.save_availability(opp.key, status, observed_at, time.time(), note, source)
+            self.db.save_opportunity(opp)
+        except Exception:  # noqa: BLE001
+            log.exception("availability save failed")
+        self.metrics.verifications += 1
+        if status in ("REMOVED", "SOLD"):
+            self.metrics.verified_gone += 1
+        log.info("AVAILABILITY %s key=%s via=%s note=%s", status, opp.key, source, note)
+        self._emit("availability", opp, status, note, changed)
+
+    def _reappeared(self, lst: Listing) -> None:
+        """A source saw the same listing again (same key, same price): it is ACTIVE as of that observation."""
+        opp = self._opps.get(lst.listing_key)
+        if opp is None:
+            return
+        if opp.last_verified_at is None or lst.source_seen_at > opp.last_verified_at:
+            self._set_availability(opp, "ACTIVE", lst.source_seen_at, "seen again by the source", lst.source)
+
+    async def _verify_one(self, opp: Opportunity) -> None:
+        src = self._adapter_for(opp.listing.source)
+        now = time.time()
+        if src is None or not src.verify_supported:
+            note = src.verify_limit_note if src else "source not running"
+            if opp.availability == "UNVERIFIED" and opp.availability_note != note:
+                self._set_availability(opp, "UNVERIFIED", opp.last_verified_at or 0.0, note, opp.listing.source)
+            return
+        try:
+            res = await asyncio.wait_for(src.verify(opp.listing), timeout=20)
+        except Exception as exc:  # noqa: BLE001
+            log.info("AVAILABILITY check failed key=%s: %s", opp.key, exc)
+            res = None
+        if res is None:
+            if opp.availability == "UNVERIFIED":
+                self._set_availability(opp, "UNVERIFIED", 0.0, f"no current confirmation ({src.verify_limit_note})", src.name)
+            return
+        status, at, note = res
+        if status == "ACTIVE" and opp.last_verified_at and at <= opp.last_verified_at and opp.availability == "ACTIVE":
+            return                                       # nothing newer than what we already knew
+        self._set_availability(opp, status, at, note, src.name)
+        if status == "ACTIVE" and now - opp.listing.source_seen_at < self.verify_max_age_s:
+            self.queue_verification(opp, priority=1 if opp.notified_at is None else 0, delay_s=self.verify_min_interval_s)
+
+    async def _verify_loop(self) -> None:
+        """Drains the availability queue in the background. Runs beside the adapters; uses only the adapters'
+        verify budgets, so discovery polls are never delayed by it."""
+        assert self._verify_q is not None
+        while self.running:
+            try:
+                prio, not_before, _seq, key = await asyncio.wait_for(self._verify_q.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+            opp = self._opps.get(key)
+            if opp is None or opp.gone:
+                continue
+            wait = not_before - time.time()
+            if wait > 0:
+                await asyncio.sleep(min(wait, 5.0))
+                if not_before - time.time() > 0:
+                    self._verify_seq += 1
+                    self._verify_q.put_nowait((prio, not_before, self._verify_seq, key))
+                    continue
+            if time.time() - self._verify_next.get(key, 0) < 1.0:
+                continue
+            self._verify_next[key] = time.time()
+            try:
+                await self._verify_one(opp)
+            except Exception:  # noqa: BLE001
+                log.exception("verification failed for %s", key)
+            if len(self._opps) > 5000:
+                cutoff = time.time() - 24 * 3600
+                self._opps = {k: o for k, o in self._opps.items() if o.detected_at > cutoff}
 
     # ----------------------------------------------------------- helpers
     def simulate_alert(self) -> Opportunity:

@@ -54,6 +54,8 @@ class Metrics:
         self.analysis_ms = Rolling()               # local processing time per evaluated listing
         self.source_to_alert_s = Rolling()         # source observation -> notification fired
         self.ingest_to_alert_ms = Rolling()        # our first sight -> notification fired
+        self.verifications = 0                      # background availability checks completed
+        self.verified_gone = 0                      # rows confirmed REMOVED / SOLD
         self.poll_intervals = collections.defaultdict(Rolling)  # per source: seconds between successful polls
         self._last_poll: dict[str, float] = {}
         self.last_new_listing_at: Optional[float] = None
@@ -102,6 +104,7 @@ class Metrics:
                 "source_to_alert_s": self.source_to_alert_s.stats(),
                 "source_age_at_ingest_s": self.source_age_at_ingest.stats(),
                 "ingest_to_alert_avg_ms": self.ingest_to_alert_ms.avg,
+                "verifications": self.verifications, "verified_gone": self.verified_gone,
                 "poll_interval_avg_s": {k: v.avg for k, v in self.poll_intervals.items()},
                 **self.process_usage(),
             }

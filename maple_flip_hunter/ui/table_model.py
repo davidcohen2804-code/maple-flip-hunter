@@ -118,7 +118,8 @@ class OpportunityModel(QAbstractTableModel):
         if role == Qt.TextAlignmentRole and col in ("Buy", "Quick Sale", "Net Profit", "Age"):
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.ToolTipRole:
-            head = f"{o.level.value}{' (stale)' if o.stale else ''} · shop {l.seller} · market value " + (f"{v.reference:,}" if v.reference else "n/a")
+            ver = (f" · {o.availability}" + (f" (verified {fmt_age(time.time() - o.last_verified_at)} ago)" if o.last_verified_at else ""))
+            head = f"{o.level.value}{' (stale)' if o.stale else ''}{ver} · shop {l.seller} · market value " + (f"{v.reference:,}" if v.reference else "n/a")
             return "\n".join([head] + v.explanation + [f"risk: {r}" for r in v.risks] + o.reasons)
         return None
 
@@ -130,6 +131,7 @@ class OpportunityFilter(QSortFilterProxyModel):
         self.max_age_s: Optional[float] = None
         self.text = ""
         self.settings = None            # Settings; when set, rows must pass the user's profitability filters
+        self.show_gone = False
         self.setSortRole(Qt.UserRole)
         self.setDynamicSortFilter(True)
 
@@ -143,4 +145,6 @@ class OpportunityFilter(QSortFilterProxyModel):
             return False
         if self.settings is not None and not passes_user_filters(o.listing, o.valuation, self.settings)[0]:
             return False
+        if o.gone and not self.show_gone:
+            return False                      # verified REMOVED / SOLD: out of the active table (kept in the DB)
         return True

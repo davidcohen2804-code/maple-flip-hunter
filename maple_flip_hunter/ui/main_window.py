@@ -67,6 +67,7 @@ class MainWindow(QMainWindow):
         self.bridge.opportunity.connect(self.on_opportunity)
         self.bridge.alert.connect(self.on_alert)
         self.bridge.health.connect(self.on_health)
+        self.bridge.availability.connect(self.on_availability)
         self.bridge.listing.connect(self.on_listing)
         notifier.toast_callback = None  # toasts are handled from the alert signal on the UI thread
         if not notifier.attach_gui():    # creates the GUI-thread audio proxy so scanner-thread alerts can play
@@ -440,6 +441,17 @@ class MainWindow(QMainWindow):
                 self.table.selectRow(r)
                 break
 
+    def on_availability(self, opp: Opportunity, status: str, note: str, changed: bool) -> None:
+        self.model.upsert(opp)                       # row text/colour; the proxy drops REMOVED/SOLD rows
+        if opp.gone:
+            self.proxy.invalidateFilter()
+        for pop in list(AlertPopup._open):
+            if pop.opp.key == opp.key:
+                pop.set_availability(status, opp.last_verified_at, note)
+        sel = self._selected()
+        if sel is not None and sel.key == opp.key:
+            self.details.setHtml(self.details_html(opp))
+
     def on_health(self, health: list[SourceHealth]) -> None:
         self._refresh_stats(health)
 
@@ -469,6 +481,8 @@ class MainWindow(QMainWindow):
         s2a = m.get("source_to_alert_avg_s")
         snd = self.notifier.sound_latency_ms
         snd_txt = f" · ingest→sound {sum(snd[-50:]) / len(snd[-50:]):.0f} ms" if snd else ""
+        if e.metrics.verifications:
+            snd_txt += f" · verified {e.metrics.verifications} ({e.metrics.verified_gone} gone)"
         self.stat_labels["latency"].setText(f"{s2a:.1f} s (n={e.metrics.alerts}){snd_txt}" if s2a is not None else "no alerts yet")
         am = m.get("analysis_ms_avg")
         self.stat_labels["analysis"].setText(f"{am:.0f} ms" if am is not None else "—")
@@ -537,6 +551,12 @@ class MainWindow(QMainWindow):
         row("ROI / Discount", (f"{v.roi:.0%}" if v.roi is not None else "n/a") + " / " + (f"{v.discount:.0%}" if v.discount is not None else "n/a"))
         row("Confidence", f"{v.confidence_label} ({v.confidence:.2f})")
         row("Liquidity", v.liquidity + (f" · {v.competitors} live competitors (cheapest {v.cheapest_competitor:,})" if v.competitors else " · no live competitors seen"))
+        avail_color = {"ACTIVE": GREEN, "SOLD": RED, "REMOVED": RED}.get(opp.availability, MUTED)
+        row("Availability", f"<b style='color:{avail_color}'>{opp.availability}</b>"
+            + (f" — {esc(opp.availability_note)}" if opp.availability_note else "")
+            + ("<br><span style='color:%s'>ACTIVE = last seen by a source; not a promise it is still there</span>" % MUTED if opp.availability == "ACTIVE" else ""))
+        row("Last verified", f"{time.strftime('%H:%M:%S', time.localtime(opp.last_verified_at))} ({fmt_age(time.time() - opp.last_verified_at)} ago)"
+            if opp.last_verified_at else "never — no source has re-checked this listing yet")
         row("Seller / shop", f"<b>{esc(l.seller)}</b>" + (f" — “{esc(l.shop_title)}”" if l.shop_title else ""))
         row("Location", f"<b>{esc(l.location)}</b>" + (f" ({esc(l.map_name)})" if l.map_name and l.fm_room is not None else ""))
         row("Seller posted at", "unknown (sources do not report it)")

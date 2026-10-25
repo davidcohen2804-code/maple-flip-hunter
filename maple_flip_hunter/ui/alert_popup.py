@@ -59,6 +59,10 @@ class AlertPopup(QWidget):
         loc = QLabel(f"📍 <b>{html.escape(self.location_text)}</b>")
         loc.setWordWrap(True)
         v.addWidget(loc)
+        self.avail = QLabel("Availability: UNVERIFIED — checking in the background…")
+        self.avail.setObjectName("muted")
+        self.avail.setWordWrap(True)
+        v.addWidget(self.avail)
         meta = QLabel(f"confidence {val.confidence_label} ({val.confidence:.2f}) · seen by source "
                       f"{max(0.0, time.time() - l.source_seen_at):.0f}s ago"
                       + (f" · alert in {latency_ms:.0f} ms" if latency_ms is not None else ""))
@@ -82,6 +86,21 @@ class AlertPopup(QWidget):
         v.addLayout(row)
 
     # ------------------------------------------------------------------ api
+    def set_availability(self, status: str, verified_at: Optional[float], note: str) -> None:
+        """Called from the GUI thread when the background check answers. No sound: only the text changes."""
+        when = time.strftime("%H:%M:%S", time.localtime(verified_at)) if verified_at else "—"
+        if status in ("REMOVED", "SOLD"):
+            self.avail.setText(f"⛔ {status} — {html.escape(note)} (verified {when}). Don't go.")
+            self.avail.setStyleSheet(f"color: {LEVEL_COLORS['JACKPOT']}; font-weight: 700;")
+            self.btn_ok.setText("OK (gone)")
+        elif status == "ACTIVE":
+            self.avail.setText(f"✅ ACTIVE — last seen {when}: {html.escape(note)} (not a promise it is still there)")
+            self.avail.setStyleSheet(f"color: {GREEN};")
+        else:
+            self.avail.setText(f"Availability: UNVERIFIED — {html.escape(note)}")
+            self.avail.setStyleSheet(f"color: {MUTED};")
+        self.adjustSize()
+
     def copy_location(self) -> None:
         QApplication.clipboard().setText(self.location_text)
         self.btn_copy.setText("✓ Copied")

@@ -139,6 +139,29 @@ class ClubFMAdapter(BaseAdapter):
     def online_detail(self) -> str:
         return f"{self.mode} mode"
 
+    verify_supported = True
+    verify_limit_note = "Club FM snapshot is 5–9 min behind real time; 'ACTIVE' means seen in the latest snapshot"
+
+    async def verify(self, listing: Listing) -> Optional[tuple[str, float, str]]:
+        if not self.permission_granted or not self._rows_cache:
+            return None
+        seller, name = (listing.seller or "").lower(), (listing.item_name or "").lower()
+        mine = [r for r in self._rows_cache if str(r.get("s") or "").lower() == seller and str(r.get("i") or "").lower() == name
+                and (listing.channel is None or not r.get("c") or int(r.get("c")) == listing.channel)]
+        if not mine:
+            return None
+        same = [r for r in mine if int(round(float(r.get("u") or r.get("p") or 0))) == listing.price]
+        if not same:
+            r = max(mine, key=lambda x: float(x.get("t") or 0))
+            return "REMOVED", float(r.get("t") or time.time()), "seller now lists it at another price"
+        r = max(same, key=lambda x: float(x.get("t") or 0))
+        at = float(r.get("t") or time.time())
+        if r.get("sold"):
+            return "SOLD", at, "snapshot marks the slot sold"
+        if str(r.get("st") or "") == "old":
+            return "REMOVED", at, "snapshot marks the listing as no longer up"
+        return "ACTIVE", at, "up in the latest snapshot"
+
     @property
     def mode(self) -> str:
         return "live" if self.live_used else "snapshot"
