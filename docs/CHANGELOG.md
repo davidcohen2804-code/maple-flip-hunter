@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 — 2026-10-25 (Windows CI round)
+* Fixes found by the Windows runner: coarse-clock time budget, headless state capture, chunked maplestory.watch draining (30 s chunks, 2 s follow-up), UTF-8 report.
+* CI gates: cozy 403 recorded as BLOCKED (never bypassed), scanner must stay LIVE/DEGRADED with a blocked source, no JACKPOT on stale rows; audio tests skip with an explicit notice when no device exists.
+* Hebrew home-test instructions (HOME_TEST_HE.md).
+
 ## 0.3.0 — 2026-10-25 (second review round)
 * cozy: no hard shop cap — safety valve keeps the watermark and resumes the walk next cycle; time-budgeted queue drain; all pages of a shop's listings are read; deals valve keeps its watermark.
 * Latency distributions (min/median/p95) for source→alert and source→first sight in metrics and the verification report.

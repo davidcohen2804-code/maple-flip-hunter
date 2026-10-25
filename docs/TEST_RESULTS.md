@@ -39,5 +39,18 @@ Local Linux build of the same PyInstaller spec: `dist/MapleFlipHunter` (293 MB o
 `--headless --seconds 3` and exited 0 (sources 403 from the container proxy, as expected). The Windows build is
 produced by the CI job; it has **not** been claimed as tested on Windows until the CI evidence below exists.
 
-## CI evidence (Windows)
-_Pending — no Windows run has been executed yet. See docs/V2_FIX_REPORT.md §3 for the two ways to produce it (`windows-build` workflow or `run_live_check.bat`). The release is UNVERIFIED until `reports/VERIFICATION_REPORT.md` exists._
+## CI evidence (Windows) — GitHub Actions windows-latest (Windows Server 2025, Python 3.12.10), 2026-10-25
+Runs 1–9 of `windows-build` (https://github.com/davidcohen2804-code/maple-flip-hunter/actions). Bugs found and fixed by CI:
+clock-resolution bug in the queue time budget (run 1), headless state reported after stop (run 4), maplestory.watch first
+poll too long with a 621-candidate backlog (run 6), report encoding on Windows consoles (run 8).
+
+Run 8/9 results:
+* Unit tests: 47 passed on Windows.
+* Windows runtime: tray notification, main window + JACKPOT banner, startup registry key — **PASS**; audio playback —
+  **NOT VERIFIED** (GitHub runners have no audio device even after installing a virtual one; tests skipped explicitly).
+* Live: maplestory.watch — **PASS** (1,348-item index, real listings). cozy.markets — **BLOCKED (HTTP 403)** from the
+  GitHub datacenter network (Cloudflare). Not bypassed. Must be re-tested from a home PC (`run_live_check.bat`).
+* Packaged EXE, 90 s headless on the runner: **LIVE**, 1,063 rows ingested, 1,021 evaluated, avg analysis 26 ms,
+  0 alerts — the maplestory.watch candidate rows averaged ~5 h old and the stale guard correctly refused to alarm.
+  Scanner kept running with one source blocked. Stale-JACKPOT gate passed.
+* Overall: **PARTIALLY VERIFIED** — see `VERIFICATION_REPORT.md` inside the Windows package.
