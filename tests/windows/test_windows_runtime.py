@@ -19,6 +19,20 @@ def qapp():
     yield app
 
 
+def _audio_outputs() -> list[str]:
+    try:
+        from PySide6.QtMultimedia import QMediaDevices
+
+        return [d.description() for d in QMediaDevices.audioOutputs()]
+    except Exception as exc:  # noqa: BLE001
+        return [f"<enumeration failed: {exc}>"]
+
+
+def test_audio_output_device_present():
+    outs = _audio_outputs()
+    assert outs, "no audio output device on this machine - alarms cannot be heard here"
+
+
 def test_winsound_plays_generated_alarm(tmp_path):
     import winsound
 
@@ -44,7 +58,7 @@ def test_qt_sound_effect_plays(qapp, tmp_path):
     while eff.status() not in (QSoundEffect.Status.Ready, QSoundEffect.Status.Error) and time.time() < deadline:
         qapp.processEvents()
         time.sleep(0.02)
-    assert eff.status() == QSoundEffect.Status.Ready, f"QSoundEffect status {eff.status()}"
+    assert eff.status() == QSoundEffect.Status.Ready, f"QSoundEffect status {eff.status()}; outputs={_audio_outputs()}"
     eff.setVolume(0.5)
     eff.play()
     deadline = time.time() + 3
