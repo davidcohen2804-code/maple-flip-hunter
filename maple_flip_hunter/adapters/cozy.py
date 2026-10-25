@@ -189,7 +189,7 @@ class CozyAdapter(BaseAdapter):
         t0 = time.monotonic()
         budget = self.drain_budget_s()
         for i, (shop, meta) in enumerate(order):
-            if i >= self.max_shops_per_cycle and time.monotonic() - t0 > budget:
+            if i >= self.max_shops_per_cycle and time.monotonic() - t0 >= budget:
                 break
             prev = self._shop_seen_at.get(shop, 0.0)
             try:
