@@ -35,7 +35,9 @@ def _window(tmp_path):
 
     async def evidence(lst):
         r = lst.source_ref_price
-        return make_evidence(lst, sold_median=r, sold_count=40, sales24=6, asks=(int(r * 1.03), int(r * 1.05), int(r * 1.1)))
+        unknown_equip = (lst.category or "").lower() == "equip" and not lst.stats
+        return make_evidence(lst, sold_median=r, sold_count=40, sales24=6, asks=(int(r * 1.03), int(r * 1.05), int(r * 1.1)),
+                             stats_matched=False if unknown_equip else None)
     eng.gather_evidence = evidence  # type: ignore[method-assign]
     w = MainWindow(eng, s, n)
     return w, eng
@@ -45,25 +47,25 @@ def test_table_has_exactly_four_columns_and_full_details_on_the_right(app, tmp_p
     w, eng = _window(tmp_path)
     w.resize(1366, 768)
     w.show()
-    assert COLUMNS == ["Item", "Buy", "Market Value", "Quick Sale"]
-    assert w.model.columnCount() == 4 and w.proxy.columnCount() == 4
+    assert COLUMNS == ["Item", "Buy", "Quick Sale", "Net Profit", "Age", "Location"]
+    assert w.model.columnCount() == 6 and w.proxy.columnCount() == 6
     hh = w.table.horizontalHeader()
-    assert hh.sectionResizeMode(0) == QHeaderView.Stretch and all(hh.sectionResizeMode(i) == QHeaderView.Fixed for i in (1, 2, 3))
+    assert hh.sectionResizeMode(0) == QHeaderView.Stretch and all(hh.sectionResizeMode(i) == QHeaderView.Fixed for i in range(1, 6))
     assert w.table.horizontalScrollBarPolicy() == Qt.ScrollBarAlwaysOff
     lst = make_listing(name="Bow Attack Scroll 60%", price=8_000, ref=42_000, seller="ShopX", age_s=5, channel=24, fm_room=25)
     opps = asyncio.new_event_loop().run_until_complete(eng.ingest([lst]))
     w.on_opportunity(opps[0]) if hasattr(w, "on_opportunity") else w.model.upsert(opps[0])
     app.processEvents()
     m = w.model
-    texts = [m.data(m.index(0, c), Qt.DisplayRole) for c in range(4)]
-    assert texts[0] == "Bow Attack Scroll 60%" and texts[1] == "8,000" and texts[2] == "42,000"
-    assert texts[3] == f"{opps[0].valuation.quick:,}" and "," in texts[3]
-    assert m.data(m.index(0, 0), Qt.ForegroundRole) is not None          # level colour on the item name
+    texts = [m.data(m.index(0, c), Qt.DisplayRole) for c in range(6)]
+    v = opps[0].valuation
+    assert texts[0] == "Bow Attack Scroll 60%" and texts[1] == "8,000" and texts[2] == f"{v.quick:,}" and "," in texts[2]
+    assert texts[3] == f"{v.net_profit:+,}" and texts[4] in ("5s", "6s", "7s") and texts[5] == "CH 24 · FM 25"
+    from maple_flip_hunter.ui.theme import GREEN, MUTED
+    from maple_flip_hunter.ui.table_model import ORANGE
+    assert m.data(m.index(0, 3), Qt.ForegroundRole).color().name() == GREEN     # positive profit green
+    assert m.data(m.index(0, 0), Qt.ForegroundRole).color().name() == GREEN     # fresh & verified green
     assert m.data(m.index(0, 1), Qt.TextAlignmentRole) & Qt.AlignRight
-    # no horizontal overflow at 1366 wide: columns fit the viewport
-    w.table.resize(700, 400)
-    app.processEvents()
-    assert sum(w.table.columnWidth(i) for i in range(4)) <= w.table.viewport().width() + 2
     # clicking the row shows everything else on the right
     w.table.selectRow(0)
     app.processEvents()
@@ -72,11 +74,36 @@ def test_table_has_exactly_four_columns_and_full_details_on_the_right(app, tmp_p
                    "Source observed", "Location", "CH 24", "FM 25", "ShopX", "Item stats", "Source", "Quick sale price",
                    "Reference value", "Listing price", "8,000", "42,000"):
         assert needle in html, needle
-    # sorting still works on every column
-    for c in range(4):
-        w.table.sortByColumn(c, Qt.DescendingOrder)
-        app.processEvents()
-    assert w.proxy.rowCount() == 1
+    # sorting works on every column; net profit high→low puts the bigger profit first
+    lst2 = make_listing(name="Zard", price=8_000, ref=90_000, seller="BigShop", age_s=200, channel=3, fm_room=18)
+    opp2 = asyncio.new_event_loop().run_until_complete(eng.ingest([lst2]))[0]
+    w.model.upsert(opp2)
+    w.table.sortByColumn(3, Qt.DescendingOrder); app.processEvents()
+    assert w.proxy.data(w.proxy.index(0, 0)) == "Zard" and w.proxy.data(w.proxy.index(0, 5)) == "CH 3 · FM 18"
+    w.table.sortByColumn(4, Qt.AscendingOrder); app.processEvents()          # freshest first
+    assert w.proxy.data(w.proxy.index(0, 0)) == "Bow Attack Scroll 60%"
+    for c in range(6):
+        w.table.sortByColumn(c, Qt.DescendingOrder); app.processEvents()
+    assert w.proxy.rowCount() == 2
+    # colours: UNCERTAIN -> orange, stale -> grey; Age updates live without a rescan
+    unc = make_listing(name="Red Whip", price=8_000, ref=20_000, seller="Maybe", age_s=30, category="Equip", stats=None)
+    o_unc = asyncio.new_event_loop().run_until_complete(eng.ingest([unc]))
+    if o_unc:
+        w.model.upsert(o_unc[0])
+        r = w.model.rows.index(o_unc[0])
+        assert w.model.data(w.model.index(r, 0), Qt.ForegroundRole).color().name() == ORANGE
+    old = make_listing(name="Pan Lid", price=8_000, ref=40_000, seller="Sleeper", age_s=2_000)
+    o_old = asyncio.new_event_loop().run_until_complete(eng.ingest([old]))[0]
+    w.model.upsert(o_old)
+    r = w.model.rows.index(o_old)
+    assert w.model.data(w.model.index(r, 0), Qt.ForegroundRole).color().name() == MUTED
+    assert w.model.data(w.model.index(r, 4), Qt.DisplayRole) == "33m"
+    o_old.listing.source_seen_at -= 3600          # time passes: next tick shows the new age, no rescan involved
+    w.model.refresh_ages()
+    assert w.model.data(w.model.index(r, 4), Qt.DisplayRole) == "1.6h"
+    # no horizontal overflow at 1366 wide
+    w.table.resize(760, 400); app.processEvents()
+    assert sum(w.table.columnWidth(i) for i in range(6)) <= w.table.viewport().width() + 2
     w.quit_app = lambda: None
     from maple_flip_hunter.ui.alert_popup import AlertPopup
     for pop in list(AlertPopup._open):
@@ -144,15 +171,15 @@ def test_main_window_resizes_freely_without_clipping_and_remembers_layout(app, t
         assert (w.width(), w.height()) == size
         total = w.split.width()
         assert abs(sum(w.split.sizes()) + w.split.handleWidth() - total) <= 8   # panels fill the splitter
-        assert w.table.width() >= 420 and w.details.parentWidget().width() >= 320
-        assert sum(w.table.columnWidth(i) for i in range(4)) <= w.table.viewport().width() + 2
+        assert w.table.width() >= 540 and w.details.parentWidget().width() >= 300
+        assert sum(w.table.columnWidth(i) for i in range(6)) <= w.table.viewport().width() + 2
         assert w.btn_copy_loc.isVisible() and w.btn_copy_loc.width() > 40 and w.vol.isVisible()
     # draggable split: move it and the value is kept
     scr = w._screen_rect()
     tw, th = max(900, min(1366, scr.width() - 40)), max(560, min(728, scr.height() - 40))
     w.resize(tw, th)
     app.processEvents()
-    want_right = int(w.split.width() * 0.42)
+    want_right = int(w.split.width() * 0.36)
     w.split.setSizes([w.split.width() - want_right, want_right])
     app.processEvents()
     assert abs(w.split.sizes()[1] - want_right) <= 40, (w.split.sizes(), want_right)

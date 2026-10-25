@@ -9,13 +9,16 @@ from PySide6.QtGui import QBrush, QColor
 from ..collector.normalize import stats_signature
 from ..detection import passes_user_filters
 from ..models import Level, Opportunity
-from .theme import LEVEL_COLORS, MUTED
+from .theme import GREEN, LEVEL_COLORS, MUTED, RED
 
 # The table shows only what is needed to decide at a glance; everything else lives in the details panel.
-COLUMNS = ["Item", "Buy", "Market Value", "Quick Sale"]
-COLUMN_TOOLTIPS = {"Item": "Item name — colour shows the level (red JACKPOT, green GOOD FLIP, yellow UNCERTAIN); grey = stale",
-                   "Buy": "Listing price in the shop (mesos)", "Market Value": "Estimated market value (reference price)",
-                   "Quick Sale": "Estimated quick-selling price (not guaranteed)"}
+COLUMNS = ["Item", "Buy", "Quick Sale", "Net Profit", "Age", "Location"]
+COLUMN_TOOLTIPS = {"Item": "Item name — green: fresh & verified (JACKPOT/GOOD FLIP), orange: UNCERTAIN, grey: stale",
+                   "Buy": "Listing price in the shop (mesos)", "Quick Sale": "Estimated quick-selling price (not guaranteed)",
+                   "Net Profit": "Estimated net profit after the selling fee (quick sale − fee − buy)",
+                   "Age": "Time since the source observed this listing (updates live)",
+                   "Location": "Where the shop is: channel · Free Market room"}
+ORANGE = "#e3893b"
 LEVEL_RANK = {Level.JACKPOT: 0, Level.GOOD: 1, Level.UNCERTAIN: 2, Level.NONE: 3}
 
 
@@ -32,6 +35,7 @@ class OpportunityModel(QAbstractTableModel):
         super().__init__()
         self.rows: list[Opportunity] = []
         self._index: dict[str, int] = {}
+        self.stale_after_s = 900.0        # MainWindow keeps this equal to Settings.max_listing_age_s
 
     def upsert(self, opp: Opportunity) -> None:
         i = self._index.get(opp.key)
@@ -50,8 +54,9 @@ class OpportunityModel(QAbstractTableModel):
             self.dataChanged.emit(self.index(i, 0), self.index(i, len(COLUMNS) - 1))
 
     def refresh_ages(self) -> None:
-        if self.rows:   # the Item colour turns grey when a row goes stale
-            self.dataChanged.emit(self.index(0, 0), self.index(len(self.rows) - 1, 0))
+        """Called by the UI timer every second: Age text and the fresh/stale colours update without a rescan."""
+        if self.rows:
+            self.dataChanged.emit(self.index(0, 0), self.index(len(self.rows) - 1, len(COLUMNS) - 1))
 
     def _reindex(self) -> None:
         self._index = {o.key: i for i, o in enumerate(self.rows)}
@@ -80,32 +85,40 @@ class OpportunityModel(QAbstractTableModel):
         o = self.rows[index.row()]
         l, v = o.listing, o.valuation
         col = COLUMNS[index.column()]
+        age_s = max(0.0, time.time() - l.source_seen_at)
         if role == Qt.UserRole:  # sort key
-            return {"Item": l.item_name.lower(), "Buy": l.price, "Market Value": v.reference or 0,
-                    "Quick Sale": v.quick or 0}[col]
+            return {"Item": l.item_name.lower(), "Buy": l.price, "Quick Sale": v.quick or 0,
+                    "Net Profit": v.net_profit if v.net_profit is not None else -10**12,
+                    "Age": -l.source_seen_at,                       # ascending = freshest first
+                    "Location": (l.channel or 0) * 1000 + (l.fm_room or 0)}[col]
         if role == Qt.DisplayRole:
             if col == "Item":
                 return l.item_name
             if col == "Buy":
                 return f"{l.price:,}"
-            if col == "Market Value":
-                return f"{v.reference:,}" if v.reference else "n/a"
             if col == "Quick Sale":
                 return f"{v.quick:,}" if v.quick else "n/a"
+            if col == "Net Profit":
+                return f"{v.net_profit:+,}" if v.net_profit is not None else "n/a"
+            if col == "Age":
+                return fmt_age(age_s)
+            if col == "Location":
+                return l.location
         if role == Qt.ForegroundRole:
-            if o.stale:
-                return QBrush(QColor(MUTED))
-            if col == "Item":                      # the subtle level indicator: coloured item name
-                return QBrush(QColor(LEVEL_COLORS.get(o.level.value, MUTED)))
-            if col == "Quick Sale" and (v.net_profit or 0) > 0:
-                return QBrush(QColor("#3fb950"))
+            if col == "Net Profit" and v.net_profit is not None and not o.stale:
+                return QBrush(QColor(GREEN if v.net_profit > 0 else RED))
+            if o.stale or age_s > self.stale_after_s:
+                return QBrush(QColor(MUTED))                       # old listing: grey
+            if o.level == Level.UNCERTAIN:
+                return QBrush(QColor(ORANGE))                      # unverified: orange
+            if col in ("Item", "Age"):
+                return QBrush(QColor(GREEN))                       # fresh & verified: green
         if role == Qt.BackgroundRole and o.level == Level.JACKPOT and not o.stale:
-            return QBrush(QColor(LEVEL_COLORS["JACKPOT"] + "1a"))   # faint red tint behind JACKPOT rows
-        if role == Qt.TextAlignmentRole and col in ("Buy", "Market Value", "Quick Sale"):
+            return QBrush(QColor(LEVEL_COLORS["JACKPOT"] + "1a"))   # faint tint behind JACKPOT rows
+        if role == Qt.TextAlignmentRole and col in ("Buy", "Quick Sale", "Net Profit", "Age"):
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.ToolTipRole:
-            head = f"{o.level.value}{' (stale)' if o.stale else ''} · net {v.net_profit:+,} · {l.location} · {l.seller}" if v.net_profit is not None \
-                else f"{o.level.value} · {l.location} · {l.seller}"
+            head = f"{o.level.value}{' (stale)' if o.stale else ''} · shop {l.seller} · market value " + (f"{v.reference:,}" if v.reference else "n/a")
             return "\n".join([head] + v.explanation + [f"risk: {r}" for r in v.risks] + o.reasons)
         return None
 

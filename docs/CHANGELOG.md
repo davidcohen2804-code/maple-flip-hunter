@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.1 — 2026-10-26 (table: 6 columns for real-time deal spotting)
+* Opportunity table columns: **Item · Buy · Quick Sale · Net Profit · Age · Location** (thousands separators,
+  right-aligned numbers, Item stretches, no horizontal scrollbar at 1366+). Net profit green when positive, red when
+  negative; fresh & verified rows green, UNCERTAIN orange, stale (older than *Treat listings older than*) grey; faint
+  tint behind JACKPOT rows. Age (2m / 5m / 1.6h) and the colours refresh every second without rescanning.
+* Sorting on every header (Net Profit high→low, Age freshest first, …); default order newest first.
+* Everything else (market value, conservative sale/net, ROI, confidence, liquidity, competitors, shop name, source,
+  timestamps, stats) stays in the details panel; click a row as before. Pricing, filters, alerts and DB unchanged.
+* UI tests updated: 6 columns, values, colours, sorting, live age, no overflow at 900–1920 px.
+
+
 ## 0.7.0 — 2026-10-26 (second LIVE source: your own FM Watcher scans)
 * New source **FM Watcher (your own scans)** — `adapters/fmwatcher.py`. Club FM's free scanner (which you run; it
   only screen-reads shop windows and is Club FM's official tool) keeps every listing it saw in its folder:

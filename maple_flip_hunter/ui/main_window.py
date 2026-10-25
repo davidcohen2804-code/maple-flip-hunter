@@ -196,7 +196,8 @@ class MainWindow(QMainWindow):
         split.setStyleSheet("QSplitter::handle { background: #2a3442; border-radius: 3px; margin: 40px 2px; }"
                             "QSplitter::handle:hover { background: #f5a524; }")
         self.table = QTableView()
-        self.table.setMinimumWidth(420)
+        self.model.stale_after_s = float(self.settings.max_listing_age_s)
+        self.table.setMinimumWidth(540)
         self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
         self.table.sortByColumn(-1, Qt.AscendingOrder)      # no sort column = newest first; click a header to sort
@@ -208,17 +209,17 @@ class MainWindow(QMainWindow):
         hh = self.table.horizontalHeader()
         hh.setStretchLastSection(False)
         hh.setSectionResizeMode(0, QHeaderView.Stretch)      # Item takes the remaining width
-        for i in (1, 2, 3):
+        for i, w in ((1, 92), (2, 96), (3, 102), (4, 56), (5, 112)):
             hh.setSectionResizeMode(i, QHeaderView.Fixed)
-            self.table.setColumnWidth(i, 120)
-        hh.setMinimumSectionSize(90)
+            self.table.setColumnWidth(i, w)
+        hh.setMinimumSectionSize(60)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.table.setWordWrap(False)
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
         split.addWidget(self.table)
 
         right = QWidget()
-        right.setMinimumWidth(320)
+        right.setMinimumWidth(300)
         rv = QVBoxLayout(right)
         rv.setContentsMargins(0, 0, 0, 0)
         rv.setSpacing(8)
@@ -376,6 +377,7 @@ class MainWindow(QMainWindow):
             self.cb_notif.setChecked(new.notifications_enabled)
             set_run_on_startup(new.run_on_windows_startup)
             self.proxy.settings = new
+            self.model.stale_after_s = float(new.max_listing_age_s)
             self.proxy.invalidateFilter()      # existing rows that no longer pass disappear at once (DB keeps them)
             source_changed = any(getattr(old, k) != getattr(new, k) for k in new.model_fields if k.startswith("source_"))
             if source_changed and self.engine.running:
