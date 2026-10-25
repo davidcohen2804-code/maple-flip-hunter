@@ -64,17 +64,40 @@ class BaseAdapter:
 
     def __init__(self, client: Optional[httpx.AsyncClient] = None, interval_s: Optional[float] = None):
         self._own_client = client is None
-        self.client = client or httpx.AsyncClient(
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            timeout=httpx.Timeout(15.0, connect=10.0),
-            http2=False,
-            follow_redirects=True,
-        )
+        self._extra_headers: dict[str, str] = {}
+        self.client = client or self._make_client()
         if interval_s:
             self.interval_s = interval_s
         self.bucket = TokenBucket(self.rate, self.burst)
         self.health = SourceHealth(name=self.name, label=self.label)
         self._stop = asyncio.Event()
+        self.closed = False
+
+    def _make_client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json", **self._extra_headers},
+            timeout=httpx.Timeout(15.0, connect=10.0),
+            http2=False,
+            follow_redirects=True,
+        )
+
+    def set_header(self, name: str, value: str) -> None:
+        """Header that must survive a client rebuild (e.g. an operator-issued bearer token)."""
+        self._extra_headers[name] = value
+        self.client.headers[name] = value
+
+    def reset(self) -> None:
+        """Prepare the adapter for a (re)start: fresh HTTP client, fresh stop flag, STARTING health.
+        Called by the engine on every start so a client closed by a previous stop is never reused."""
+        if self._own_client and (self.closed or self.client.is_closed):
+            self.client = self._make_client()
+        self.closed = False
+        self._stop = asyncio.Event()
+        self.bucket = TokenBucket(self.rate, self.burst)
+        self.health.status = SourceStatus.STARTING
+        self.health.detail = ""
+        self.health.last_error = None
+        self.health.rate_limited_until = None
 
     # ------------------------------------------------------------------ http
     async def fetch_json(self, path: str, params: Optional[dict[str, Any]] = None, retries: int = 3) -> Any:
@@ -84,6 +107,8 @@ class BaseAdapter:
             if self.health.rate_limited_until and time.time() < self.health.rate_limited_until:
                 raise RateLimited(self.health.rate_limited_until - time.time())
             await self.bucket.acquire()
+            if self.closed or self.client.is_closed:
+                raise FetchError("adapter is stopped (HTTP client closed)")
             t0 = time.perf_counter()
             try:
                 r = await self.client.get(url, params=params)
@@ -180,6 +205,11 @@ class BaseAdapter:
         self._stop.set()
 
     async def aclose(self) -> None:
+        """Stop polling and close the HTTP client. The adapter can be used again after reset()."""
         self.stop()
+        self.closed = True
         if self._own_client:
-            await self.client.aclose()
+            try:
+                await self.client.aclose()
+            except Exception:  # noqa: BLE001
+                pass

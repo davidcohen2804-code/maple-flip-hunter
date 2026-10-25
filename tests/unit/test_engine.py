@@ -176,3 +176,98 @@ def test_stale_reference_statistics_cap_confidence():
     assert opps[0].valuation.confidence <= 0.5
     assert any("h old" in r for r in opps[0].valuation.risks)
     assert opps[0].level == Level.GOOD            # still alerted, but never a JACKPOT on stale references
+
+
+# ---------------------------------------------------------------- restart lifecycle (home-test bug: "client has been closed")
+class RestartAdapter(BaseAdapter):
+    """Own-client adapter whose HTTP goes to an in-memory transport, so a rebuilt client is verifiable."""
+    name = "cozy"
+    label = "restart-fake"
+    interval_s = 0.05
+
+    def __init__(self):
+        self.polls = 0
+        self.errors: list[str] = []
+        super().__init__()
+
+    def _make_client(self):
+        import httpx
+
+        def handler(req):
+            return httpx.Response(200, json={"ok": True})
+        c = httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x")
+        return c
+
+    async def poll(self):
+        try:
+            await self.fetch_json("/ping")
+        except Exception as exc:  # noqa: BLE001
+            self.errors.append(str(exc))
+            raise
+        self.polls += 1
+        self.mark_success(1.0, 0)
+        return []
+
+    async def fetch_evidence(self, listing, comp_window_s=86400):
+        return make_evidence(listing)
+
+
+def _wait(cond, timeout=5.0):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if cond():
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_start_stop_start_rebuilds_closed_clients_and_keeps_polling():
+    a = RestartAdapter()
+    eng = MarketEngine(Settings(), Database(":memory:"), Notifier(enable_audio=False), adapters=[a])
+    eng.start()
+    assert _wait(lambda: a.polls >= 2)
+    eng.stop()
+    assert a.closed and a.client.is_closed            # stop really closed the client
+    polls_before = a.polls
+    eng.start()                                       # second start must not reuse the closed client
+    assert _wait(lambda: a.polls >= polls_before + 2)
+    assert not a.client.is_closed
+    assert not any("closed" in e for e in a.errors), a.errors
+    assert a.health.status.value == "ONLINE"
+    eng.stop()
+    assert not eng.running and eng.scanner_state == "OFFLINE"
+
+
+def test_settings_change_between_runs_rebuilds_adapters_from_settings():
+    s = Settings(source_cozy_enabled=False, source_msw_enabled=False, source_clubfm_enabled=False)
+    eng = MarketEngine(s, Database(":memory:"), Notifier(enable_audio=False))   # adapters come from settings
+    assert eng.adapters == []
+    eng.start(); eng.stop()
+    s2 = s.model_copy(update={"source_clubfm_enabled": True, "source_clubfm_permission_granted": False})
+    eng.update_settings(s2)
+    eng.start()
+    assert [a.name for a in eng.adapters] == ["clubfm"]   # rebuilt from the new settings
+    assert eng.adapters[0].health.status.value in ("UNSUPPORTED", "STARTING")
+    eng.stop()
+    assert eng.adapters[0].closed
+
+
+def test_stop_is_idempotent_and_blocked_source_does_not_stop_others():
+    import httpx
+
+    class Blocked(RestartAdapter):
+        name = "blocked"
+
+        def _make_client(self):
+            return httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(403)), base_url="https://x")
+
+    ok, bad = RestartAdapter(), Blocked()
+    bad.retry_base_delay = 0.001
+    eng = MarketEngine(Settings(), Database(":memory:"), Notifier(enable_audio=False), adapters=[ok, bad])
+    eng.start()
+    assert _wait(lambda: ok.polls >= 3 and bad.health.status.value == "AUTH REQUIRED")
+    eng.last_data_at = time.time()
+    eng._refresh_state()
+    assert eng.scanner_state == "LIVE"
+    eng.stop(); eng.stop()
+    assert ok.closed and bad.closed

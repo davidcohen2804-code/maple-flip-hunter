@@ -34,6 +34,7 @@ class MarketEngine:
         self.metrics = Metrics()
         self.pricing = PricingEngine(settings)
         self.detector = Detector(settings)
+        self._adapters_from_settings = adapters is None
         self.adapters: list[BaseAdapter] = adapters if adapters is not None else self._default_adapters()
         self._callbacks: dict[str, list[Callback]] = {k: [] for k in
                                                       ("listing", "opportunity", "alert", "health", "log")}
@@ -76,25 +77,39 @@ class MarketEngine:
     def start(self) -> None:
         if self.running:
             return
+        if self._thread is not None and self._thread.is_alive():
+            self._thread.join(5.0)            # a previous stop() is still winding down
+        if self._adapters_from_settings:
+            # rebuild from the CURRENT settings (tokens, enabled sources, permission flags) with fresh clients
+            self.adapters = self._default_adapters()
+        for a in self.adapters:
+            a.reset()
+        self.last_data_at = None
+        self.scanner_state = "OFFLINE"
         self.running = True
+        self._loop = asyncio.new_event_loop()   # created here so stop() can always reach it, even immediately
         self._thread = threading.Thread(target=self._thread_main, name="market-engine", daemon=True)
         self._thread.start()
 
-    def stop(self, timeout: float = 5.0) -> None:
+    def stop(self, timeout: float = 10.0) -> None:
+        """Stop polling, cancel in-flight requests, close HTTP clients. Safe to call twice; start() may follow."""
         if not self.running:
             return
         self.running = False
         loop = self._loop
-        if loop:
-            for a in self.adapters:
-                loop.call_soon_threadsafe(a.stop)
+        if loop and not loop.is_closed():
+            try:
+                loop.call_soon_threadsafe(lambda: [a.stop() for a in self.adapters])
+            except RuntimeError:
+                pass
         if self._thread:
             self._thread.join(timeout)
+            if self._thread.is_alive():
+                log.warning("engine thread did not finish within %.0fs", timeout)
         self.scanner_state = "OFFLINE"
         self._emit("health", self.health())
 
     def _thread_main(self) -> None:
-        self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         try:
             self._loop.run_until_complete(self._main())
@@ -102,11 +117,14 @@ class MarketEngine:
             log.exception("engine loop crashed")
         finally:
             try:
-                self._loop.run_until_complete(asyncio.gather(*(a.aclose() for a in self.adapters), return_exceptions=True))
+                pending = [t for t in asyncio.all_tasks(self._loop) if not t.done()]
+                for t in pending:
+                    t.cancel()
+                if pending:
+                    self._loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
             except Exception:  # noqa: BLE001
                 pass
             self._loop.close()
-            self._loop = None
 
     async def _main(self) -> None:
         self._eval_lock = asyncio.Lock()
@@ -114,7 +132,16 @@ class MarketEngine:
             a._stop = asyncio.Event()  # fresh event bound to this loop (restart support)
         self._tasks = [asyncio.create_task(a.run(self._make_handler(a))) for a in self.adapters]
         self._tasks.append(asyncio.create_task(self._housekeeping()))
-        await asyncio.gather(*self._tasks, return_exceptions=True)
+        try:
+            await asyncio.wait_for(asyncio.gather(*self._tasks, return_exceptions=True), timeout=None)
+        finally:
+            # orderly shutdown: cancel anything still pending (a request mid-flight), then close clients
+            for t in self._tasks:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+            await asyncio.gather(*(a.aclose() for a in self.adapters), return_exceptions=True)
+            self._tasks = []
 
     def _make_handler(self, adapter: BaseAdapter) -> Callable[[list[Listing]], Any]:
         async def handler(listings: list[Listing]) -> None:
@@ -140,7 +167,10 @@ class MarketEngine:
                 except Exception:  # noqa: BLE001
                     log.exception("cleanup failed")
                 last_cleanup = time.time()
-            await asyncio.sleep(2.0)
+            for _ in range(20):
+                if not self.running:
+                    return
+                await asyncio.sleep(0.1)
 
     # ------------------------------------------------------------ state
     def _refresh_state(self) -> None:

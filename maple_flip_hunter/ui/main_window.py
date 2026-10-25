@@ -293,6 +293,7 @@ class MainWindow(QMainWindow):
     def open_settings(self) -> None:
         dlg = SettingsDialog(self.settings, self)
         if dlg.exec():
+            old = self.settings
             new = dlg.result_settings(self.settings)
             new.alert_volume = self.settings.alert_volume
             self.settings = new
@@ -300,7 +301,13 @@ class MainWindow(QMainWindow):
             self.engine.update_settings(new)
             self.cb_notif.setChecked(new.notifications_enabled)
             set_run_on_startup(new.run_on_windows_startup)
-            self.status.showMessage("Settings saved.")
+            source_changed = any(getattr(old, k) != getattr(new, k) for k in new.model_fields if k.startswith("source_"))
+            if source_changed and self.engine.running:
+                self.engine.stop()
+                self.engine.start()            # rebuilds adapters with fresh clients from the new settings
+                self.status.showMessage("Settings saved — scanner restarted with the new source settings.")
+            else:
+                self.status.showMessage("Settings saved.")
 
     def _apply_filters(self) -> None:
         lv = set()

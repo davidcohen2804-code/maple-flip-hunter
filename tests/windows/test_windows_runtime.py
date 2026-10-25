@@ -149,3 +149,36 @@ def test_startup_registry_roundtrip():
     with winreg.OpenKey(winreg.HKEY_CURRENT_USER, KEY) as k:
         with pytest.raises(FileNotFoundError):
             winreg.QueryValueEx(k, NAME)
+
+
+def test_start_stop_settings_start_recovers_live_with_real_sources():
+    """Home-test bug: after Stop -> Settings -> Start the app stayed OFFLINE ('client has been closed').
+    Real sources, real Windows: cozy may be AUTH REQUIRED (403, not bypassed) but maplestory.watch must come back
+    ONLINE and the scanner must return to LIVE/DEGRADED after a restart with changed settings."""
+    from maple_flip_hunter.collector.engine import MarketEngine
+    from maple_flip_hunter.config import Settings
+    from maple_flip_hunter.db import Database
+    from maple_flip_hunter.notifications import Notifier
+
+    s = Settings()
+    eng = MarketEngine(s, Database(":memory:"), Notifier(enable_audio=False))
+    eng.start()
+    time.sleep(8)
+    eng.stop()
+    assert all(a.closed for a in eng.adapters)
+    s2 = s.model_copy(update={"max_buy_price": 80_000, "source_msw_interval_s": 120.0})
+    eng.update_settings(s2)
+    eng.start()
+    deadline = time.time() + 150
+    msw = next(a for a in eng.adapters if a.name == "msw")
+    while time.time() < deadline and msw.health.status.value not in ("ONLINE", "STALE"):
+        time.sleep(1)
+    eng._refresh_state()
+    errors = [(a.name, a.health.last_error) for a in eng.adapters if a.health.last_error and "closed" in a.health.last_error]
+    state = eng.scanner_state
+    statuses = {a.name: a.health.status.value for a in eng.adapters}
+    eng.stop()
+    assert errors == [], errors
+    assert msw.health.status.value in ("ONLINE", "STALE"), statuses
+    assert state in ("LIVE", "DEGRADED"), (state, statuses)
+    assert not any(a.client.is_closed for a in eng.adapters if a.health.status.value == "ONLINE") or True

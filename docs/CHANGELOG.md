@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.1 — 2026-10-25 (restart fix)
+* Fixed: scanner stayed OFFLINE after Stop → Settings → Start (adapters reused a closed HTTP client). Adapters are rebuilt/reset on every start; stop cancels in-flight work and closes clients; UI restarts the scanner when source settings change. New unit + Windows restart tests. See docs/FIX_REPORT_RESTART.md.
+
 ## 0.4.0 — 2026-10-25 (data-speed round)
 * Research: cozy.markets blocks the app (403) also from home — permission request drafted; Club FM snapshot/live formats documented; Kerning Exchange, EvilEyeFM, meso.watch audited (docs/SOURCE_AUDIT.md, docs/ACCESS_REQUESTS.md).
 * New Club FM adapter (columnar snapshot decoder, sales + active asks, evidence) — **disabled until written permission is recorded** in Settings; optional bearer token for the live feed.

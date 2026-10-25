@@ -67,7 +67,7 @@ class ClubFMAdapter(BaseAdapter):
         self.permission_granted = permission_granted
         self.token = token.strip()
         if self.token:
-            self.client.headers["Authorization"] = f"Bearer {self.token}"
+            self.set_header("Authorization", f"Bearer {self.token}")
         self._seen_keys: dict[str, float] = {}
         self._last_T: float = 0.0
         self._rows_cache: list[dict[str, Any]] = []
