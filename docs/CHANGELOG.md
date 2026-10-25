@@ -8,6 +8,8 @@
   details ≥ 320 px); both adapt to the window size, the Item column takes the remaining width.
 * Window size, position, maximized state and the splitter split are remembered across sessions and restored fully
   on-screen (small/large screens, Windows scaling, second monitor); saved on close, on tray-hide and on Quit.
+* Filter bar wraps onto a second line (flow layout) when the window is narrow, and the title may shrink — on Windows
+  fonts the old single row demanded 1,292 px (caught by the new GUI test on the Windows runner).
 * GUI tests: resize to 900×560 / 1366×728 / 1920×1040 / 1000×650 without clipping, splitter drag, maximize/restore,
   close → reopen restores geometry and split, off-screen geometry pulled back. 80 unit tests.
 

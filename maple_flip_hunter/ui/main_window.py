@@ -19,6 +19,7 @@ from ..config import Settings
 from ..models import Level, Opportunity, SourceHealth
 from .bridge import EngineBridge
 from .alert_popup import AlertPopup
+from .flow_layout import FlowLayout
 from .settings_dialog import SettingsDialog, fit_on_screen
 from .startup import set_run_on_startup
 from .table_model import OpportunityFilter, OpportunityModel, fmt_age
@@ -94,6 +95,8 @@ class MainWindow(QMainWindow):
         header = QHBoxLayout()
         title = QLabel("MAPLE FLIP HUNTER")
         title.setObjectName("title")
+        title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # decorative: may shrink on small screens
+        title.setMinimumWidth(140)
         header.addWidget(title)
         self.state_pill = QLabel("OFFLINE")
         self.state_pill.setObjectName("pill")
@@ -146,7 +149,8 @@ class MainWindow(QMainWindow):
         self.banner_timer.timeout.connect(self.banner.hide)
 
         # filters
-        filt = QHBoxLayout()
+        filt_host = QWidget()
+        filt = FlowLayout(filt_host)
         filt.setSpacing(10)
         self.cb_jp = QCheckBox("JACKPOT")
         self.cb_good = QCheckBox("GOOD FLIP")
@@ -155,7 +159,6 @@ class MainWindow(QMainWindow):
             cb.setChecked(True)
             cb.toggled.connect(self._apply_filters)
             filt.addWidget(cb)
-        filt.addSpacing(16)
         filt.addWidget(QLabel("Fresh:"))
         self.fresh = QComboBox()
         for label, secs in (("Any", None), ("Last 5 min", 300), ("Last 15 min", 900), ("Last 1 h", 3600)):
@@ -167,7 +170,9 @@ class MainWindow(QMainWindow):
         self.search.setPlaceholderText("Filter by item or shop…")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._apply_filters)
-        filt.addWidget(self.search, 1)
+        self.search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.search.setMinimumWidth(120)
+        filt.addWidget(self.search)
         filt.addWidget(QLabel("Alerts"))
         self.cb_notif = QCheckBox()
         self.cb_notif.setChecked(self.settings.notifications_enabled)
@@ -180,7 +185,7 @@ class MainWindow(QMainWindow):
         self.vol.setValue(int(self.settings.alert_volume * 100))
         self.vol.valueChanged.connect(self._volume)
         filt.addWidget(self.vol)
-        root.addLayout(filt)
+        root.addWidget(filt_host)
 
         # table + details
         split = QSplitter(Qt.Horizontal)
