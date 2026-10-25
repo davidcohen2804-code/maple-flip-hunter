@@ -30,7 +30,7 @@ class MapleStoryWatchAdapter(BaseAdapter):
     rate = 1.5
     burst = 3
 
-    def __init__(self, *args: Any, max_item_lookups: int = 60, candidate_discount: float = 0.20, **kwargs: Any):
+    def __init__(self, *args: Any, max_item_lookups: int = 200, candidate_discount: float = 0.20, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.max_item_lookups = max_item_lookups
         self.candidate_discount = candidate_discount
@@ -97,11 +97,15 @@ class MapleStoryWatchAdapter(BaseAdapter):
             if low <= typ * (1 - self.candidate_discount) and seen > self._item_seen.get(name, 0):
                 candidates.append((seen, name))
         candidates.sort(reverse=True)
-        self.backlog = max(0, len(candidates) - self.max_item_lookups)   # unfetched candidates stay candidates
-        if self.backlog:
-            log.warning("msw candidate backlog %d (max %d per cycle)", self.backlog, self.max_item_lookups)
+        self.backlog = max(0, len(candidates) - self.max_item_lookups)   # unfetched candidates stay candidates (provisional)
         out: list[Listing] = []
-        for seen, name in candidates[: self.max_item_lookups]:
+        t0 = time.monotonic()
+        budget = max(30.0, self.interval_s * 0.8)
+        fetched = 0
+        for i, (seen, name) in enumerate(candidates):
+            if i >= self.max_item_lookups or time.monotonic() - t0 >= budget:
+                break
+            fetched += 1
             try:
                 data = await self.fetch_json("/api/item", {"name": name})
             except FetchError as exc:
@@ -118,6 +122,9 @@ class MapleStoryWatchAdapter(BaseAdapter):
                 self._seen_keys[lst.listing_key] = now
                 newest = max(newest, lst.source_seen_at)
                 out.append(lst)
+        self.backlog = len(candidates) - fetched
+        if self.backlog:
+            log.warning("msw candidate backlog %d after this cycle", self.backlog)
         if len(self._seen_keys) > 50_000:
             cutoff = now - 6 * 3600
             self._seen_keys = {k: t for k, t in self._seen_keys.items() if t > cutoff}

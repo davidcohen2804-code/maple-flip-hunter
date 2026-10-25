@@ -49,7 +49,7 @@ class Settings(BaseModel):
     source_cozy_max_shops_per_cycle: int = 25
     source_msw_enabled: bool = True
     source_msw_interval_s: float = Field(180.0, ge=60.0)
-    source_msw_max_item_lookups_per_cycle: int = 60
+    source_msw_max_item_lookups_per_cycle: int = 200
     source_msw_candidate_discount: float = 0.20
 
     # --- retention ------------------------------------------------------

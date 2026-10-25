@@ -33,8 +33,10 @@ def run(seconds: float, db: str = ":memory:", audio: bool = False) -> dict:
     t_end = time.time() + seconds
     while time.time() < t_end:
         time.sleep(1)
+    engine._refresh_state()
+    final_state = engine.scanner_state          # capture BEFORE stop() (stop always reports OFFLINE)
     engine.stop()
-    return {"seconds": seconds, "scanner_state": engine.scanner_state,
+    return {"seconds": seconds, "scanner_state": final_state,
             "health": [h.model_dump() for h in engine.health()], "metrics": engine.metrics.snapshot(),
             "coverage": engine.coverage(), "opportunities": opps[:50], "alerts": alerts}
 
