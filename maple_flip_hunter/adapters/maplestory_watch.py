@@ -109,7 +109,7 @@ class MapleStoryWatchAdapter(BaseAdapter):
         budget = 30.0                               # short chunks: rows reach the engine every ~30 s
         fetched = 0
         for i, (seen, name) in enumerate(candidates):
-            if i >= self.max_item_lookups or time.monotonic() - t0 >= budget:
+            if i >= self.max_item_lookups or time.monotonic() - t0 >= budget or self._stop.is_set():
                 break
             fetched += 1
             try:

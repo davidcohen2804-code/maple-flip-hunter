@@ -29,6 +29,18 @@ so a stop issued right after a start could miss the loop and leave adapters slee
   150 s and the scanner to LIVE/DEGRADED, with no "closed" error on any adapter; cozy may stay AUTH REQUIRED (403,
   not bypassed).
 
+## CI run #13 finding (v0.4.1) and fix (v0.4.2)
+The new Windows test failed: `engine thread did not finish within 10s` → adapters not closed. Cause (not a timeout
+problem): `stop()` only *flagged* the adapters; a poll already inside a long loop — maplestory.watch fetching up to
+40 candidate items at 1.5 req/s (~30 s), cozy draining its shop queue, or an HTTP back-off sleep — kept running
+until it finished, so the engine thread outlived the 10 s join and `aclose()` had not run yet.
+Fix: `stop()` now runs `_request_shutdown` on the engine loop — flags every adapter **and** cancels all adapter
+tasks 1.5 s later (grace for a request about to return); the long loops in cozy / maplestory.watch check the stop
+flag between requests; `_main`'s `finally` awaits the cancelled tasks and closes every client before the thread
+ends, so `stop()` returns only after all clients are closed. No timeout was raised.
+New unit tests: stop interrupts a 60 s poll in < 5 s; stop during an in-flight HTTP request (server that never
+answers) returns in < 5 s with the client closed, thread finished, and the next start uses a fresh client.
+
 ## Verification status
 Marked verified **only** when the CI run that includes the new Windows restart test passes — see the run linked in
 docs/TEST_RESULTS.md.

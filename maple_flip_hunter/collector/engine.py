@@ -99,7 +99,7 @@ class MarketEngine:
         loop = self._loop
         if loop and not loop.is_closed():
             try:
-                loop.call_soon_threadsafe(lambda: [a.stop() for a in self.adapters])
+                loop.call_soon_threadsafe(self._request_shutdown)
             except RuntimeError:
                 pass
         if self._thread:
@@ -108,6 +108,18 @@ class MarketEngine:
                 log.warning("engine thread did not finish within %.0fs", timeout)
         self.scanner_state = "OFFLINE"
         self._emit("health", self.health())
+
+    def _request_shutdown(self) -> None:
+        """Runs on the engine loop: ask adapters to stop, then cancel whatever is still running after a short grace
+        period (a poll in the middle of a long lookup loop or a back-off sleep must not delay Stop)."""
+        for a in self.adapters:
+            a.stop()
+
+        def _cancel() -> None:
+            for t in self._tasks:
+                if not t.done():
+                    t.cancel()
+        self._loop.call_later(1.5, _cancel)
 
     def _thread_main(self) -> None:
         asyncio.set_event_loop(self._loop)

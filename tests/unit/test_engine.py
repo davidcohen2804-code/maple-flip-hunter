@@ -271,3 +271,43 @@ def test_stop_is_idempotent_and_blocked_source_does_not_stop_others():
     assert eng.scanner_state == "LIVE"
     eng.stop(); eng.stop()
     assert ok.closed and bad.closed
+
+
+def test_stop_interrupts_a_long_poll_within_seconds():
+    class SlowAdapter(RestartAdapter):
+        async def poll(self):
+            self.polls += 1
+            await asyncio.sleep(60)           # a poll stuck in a long loop / back-off
+            return []
+    a = SlowAdapter()
+    eng = MarketEngine(Settings(), Database(":memory:"), Notifier(enable_audio=False), adapters=[a])
+    eng.start()
+    assert _wait(lambda: a.polls >= 1)
+    t0 = time.time()
+    eng.stop()
+    assert time.time() - t0 < 5.0
+    assert a.closed and a.client.is_closed
+
+
+def test_stop_during_an_in_flight_http_request_closes_client_and_returns_fast():
+    import httpx
+
+    class HangingAdapter(RestartAdapter):
+        def _make_client(self):
+            async def handler(req):
+                await asyncio.sleep(30)           # the server never answers in time
+                return httpx.Response(200, json={})
+            return httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x",
+                                     timeout=httpx.Timeout(60.0))
+    a = HangingAdapter()
+    eng = MarketEngine(Settings(), Database(":memory:"), Notifier(enable_audio=False), adapters=[a])
+    eng.start()
+    time.sleep(0.5)                                   # request is now in flight
+    t0 = time.time()
+    eng.stop()
+    assert time.time() - t0 < 5.0, "stop must not wait for the hanging request"
+    assert a.closed and a.client.is_closed
+    assert not eng._thread.is_alive()
+    eng.start()                                       # and a fresh client is used afterwards
+    assert not a.client.is_closed
+    eng.stop()

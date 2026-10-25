@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.4.2 — 2026-10-25
+* Stop now cancels adapter tasks after a 1.5 s grace (long lookup loops and back-off sleeps no longer delay shutdown); loops check the stop flag; clients are closed before stop() returns. Tests for stop during a long poll and during an in-flight request. 55 unit tests.
+
 ## 0.4.1 — 2026-10-25 (restart fix)
 * Fixed: scanner stayed OFFLINE after Stop → Settings → Start (adapters reused a closed HTTP client). Adapters are rebuilt/reset on every start; stop cancels in-flight work and closes clients; UI restarts the scanner when source settings change. New unit + Windows restart tests. See docs/FIX_REPORT_RESTART.md.
 
