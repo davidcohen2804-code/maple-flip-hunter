@@ -154,7 +154,11 @@ class BaseAdapter:
         if newest_data_age_s is not None and newest_data_age_s > self.stale_after_s():
             self._set_status(SourceStatus.STALE, f"newest observation {newest_data_age_s/60:.0f} min old")
         else:
-            self._set_status(SourceStatus.ONLINE, "")
+            self._set_status(SourceStatus.ONLINE, self.online_detail())
+
+    def online_detail(self) -> str:
+        """Short text shown next to ONLINE (adapters override, e.g. 'live' / 'snapshot')."""
+        return ""
 
     def mark_failure(self, exc: Exception) -> None:
         self.health.last_error = str(exc)[:200]

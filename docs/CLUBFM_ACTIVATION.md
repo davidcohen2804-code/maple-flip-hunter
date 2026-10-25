@@ -17,6 +17,13 @@ Club FM team is on record and `Settings → Sources → Club FM` is ticked.
 | One source failing never stops the scanner | `adapters/base.py::run` per-adapter loop | tested (`test_engine.py`) |
 | Tests with synthetic data | `tests/unit/test_clubfm.py` (decoder, permission gate, live/snapshot switch, evidence → QUICK FLIPS) | all green |
 
+## Try the whole chain at home now (no Club FM traffic)
+1. Double-click `run_clubfm_sim.bat` (needs Python; or `python tools\clubfm_simulator.py`).
+2. In `%APPDATA%\MapleFlipHunter\settings.json` add `"source_clubfm_base_url": "http://127.0.0.1:8765"`,
+   `"source_clubfm_permission_granted": true`, `"source_clubfm_token": "demo-token"`; start the app.
+3. Status bar shows `Club FM (maplefm.gg): ONLINE — live mode`; within ~2 min a JACKPOT card + sound appears for shop
+   **NoobTrader**. Remove the `base_url` line (and untick Club FM) afterwards.
+
 ## What is still missing for real activation
 
 1. **A genuine approval message from the Club FM team.** The screenshot supplied on 2026-10-25 is headed

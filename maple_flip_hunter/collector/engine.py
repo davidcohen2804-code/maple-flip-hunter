@@ -60,7 +60,9 @@ class MarketEngine:
         if s.source_clubfm_enabled:
             out.append(ClubFMAdapter(interval_s=s.source_clubfm_interval_s,
                                      permission_granted=s.source_clubfm_permission_granted,
-                                     token=s.source_clubfm_token))
+                                     token=s.source_clubfm_token, base_url=s.source_clubfm_base_url,
+                                     live_interval_s=s.source_clubfm_live_interval_s,
+                                     live_backoff_s=s.source_clubfm_live_backoff_s))
         return out
 
     def on(self, event: str, cb: Callback) -> None:
@@ -389,6 +391,7 @@ class MarketEngine:
                 a.candidate_discount = settings.source_msw_candidate_discount
             elif isinstance(a, ClubFMAdapter):
                 a.interval_s = settings.source_clubfm_interval_s
+                a.live_interval_s = settings.source_clubfm_live_interval_s
                 a.permission_granted = settings.source_clubfm_permission_granted
 
 

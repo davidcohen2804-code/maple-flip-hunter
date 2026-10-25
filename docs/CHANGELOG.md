@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.2 — 2026-10-26 (Club FM: ready to switch on)
+* Club FM adapter: configurable rate limits (`source_clubfm_interval_s` snapshot ≥ 30 s, `source_clubfm_live_interval_s`
+  live, `source_clubfm_live_backoff_s` exponential back-off 30→60→120…≤600 s on a refused/failed live feed, one
+  connection), bearer token, `source_clubfm_base_url` (for the simulator only), status detail "live mode" / "snapshot mode".
+* `tools/clubfm_simulator.py` + `run_clubfm_sim.bat`: local server speaking Club FM's columnar format (snap public,
+  live needs `demo-token`), injects one under-priced listing every 90 s. `--headless --settings <file>` runs the EXE
+  against it. CI now runs the packaged EXE against the simulator and gates on: live mode → rows ingested → alert →
+  ingest→sound latency recorded (no maplefm.gg traffic).
+* End-to-end unit test (real HTTP, real adapter, real engine): injected row → JACKPOT → profit-band sound; the same shop
+  arriving from maplestory.watch without a channel is a duplicate (no second alert); wrong token → snapshot mode with
+  doubling back-off. 72 unit tests.
+* Real Club FM requests remain OFF until `source_clubfm_permission_granted` is ticked. maplestory.watch unchanged.
+
+
 ## 0.6.1 — 2026-10-25 (always-on-top alert card, ingest→sound latency)
 * **Alert card above other windows** for every JACKPOT / GOOD FLIP alert that passed all filters: item, buy price,
   *estimated* net profit (labelled "not guaranteed", with the quick-sale price it assumes), exact location

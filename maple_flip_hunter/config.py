@@ -117,7 +117,10 @@ class Settings(BaseModel):
     source_clubfm_enabled: bool = True
     source_clubfm_permission_granted: bool = False
     source_clubfm_token: str = ""
-    source_clubfm_interval_s: float = Field(60.0, ge=30.0)
+    source_clubfm_interval_s: float = Field(60.0, ge=30.0, description="Snapshot polling interval (their limit: 1 per 60 s)")
+    source_clubfm_live_interval_s: float = Field(60.0, ge=5.0, description="Live-feed polling interval when a token works")
+    source_clubfm_live_backoff_s: float = Field(30.0, ge=5.0, description="First retry delay after the live feed refuses/fails; doubles up to 10 min")
+    source_clubfm_base_url: str = Field("https://api.maplefm.gg", description="Change only for the local simulator (tools/clubfm_simulator.py)")
     # cozy.markets: the public JSON answers browsers but returns HTTP 403 to this app (Cloudflare bot
     # protection), both from datacenters and from a home PC. The adapter stays enabled so a future
     # whitelisting / token simply works; nothing circumvents the block.

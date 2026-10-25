@@ -7,6 +7,7 @@ import argparse
 import json
 import logging
 import sys
+import pathlib
 import time
 
 from .collector.engine import MarketEngine
@@ -16,9 +17,9 @@ from .logging_setup import setup_logging
 from .notifications import Notifier
 
 
-def run(seconds: float, db: str = ":memory:", audio: bool = False) -> dict:
+def run(seconds: float, db: str = ":memory:", audio: bool = False, settings_file: str | None = None) -> dict:
     setup_logging(logging.INFO)
-    settings = Settings()
+    settings = Settings.load(pathlib.Path(settings_file)) if settings_file else Settings()
     engine = MarketEngine(settings, Database(db), Notifier(enable_audio=audio))
     alerts: list[dict] = []
     opps: list[dict] = []
@@ -40,7 +41,8 @@ def run(seconds: float, db: str = ":memory:", audio: bool = False) -> dict:
     engine.stop()
     return {"seconds": seconds, "scanner_state": final_state,
             "health": [h.model_dump() for h in engine.health()], "metrics": engine.metrics.snapshot(),
-            "coverage": engine.coverage(), "opportunities": opps[:50], "alerts": alerts}
+            "coverage": engine.coverage(), "opportunities": opps[:50], "alerts": alerts,
+            "sound_latency_ms": list(engine.notifier.sound_latency_ms) if engine.notifier else []}
 
 
 def main() -> int:
@@ -48,8 +50,9 @@ def main() -> int:
     ap.add_argument("--seconds", type=float, default=90)
     ap.add_argument("--db", default=":memory:")
     ap.add_argument("--out", default="")
+    ap.add_argument("--settings", default=None, help="settings.json to use instead of %APPDATA% (e.g. the Club FM simulator)")
     a = ap.parse_args()
-    res = run(a.seconds, a.db)
+    res = run(a.seconds, a.db, settings_file=a.settings)
     txt = json.dumps(res, indent=2, default=str)
     if a.out:
         with open(a.out, "w", encoding="utf-8") as f:

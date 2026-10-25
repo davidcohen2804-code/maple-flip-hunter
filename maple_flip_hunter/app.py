@@ -23,7 +23,8 @@ def main(argv: list[str] | None = None) -> int:
 
         secs = float(argv[argv.index("--seconds") + 1]) if "--seconds" in argv else 60.0
         out = argv[argv.index("--out") + 1] if "--out" in argv else "headless_result.json"
-        res = headless_run(secs)
+        settings_file = argv[argv.index("--settings") + 1] if "--settings" in argv else None
+        res = headless_run(secs, settings_file=settings_file)
         with open(out, "w", encoding="utf-8") as f:
             json.dump(res, f, indent=2, default=str)
         return 0

@@ -137,3 +137,74 @@ def test_clubfm_evidence_feeds_rows_from_other_sources_and_quick_flips_gate():
     assert any("20 completed sales" in e for e in opps[0].valuation.explanation), opps[0].valuation.explanation
     assert opps[0].level in (Level.JACKPOT, Level.GOOD), opps[0].reasons
     assert len(alerts) == 1
+
+
+def _start_simulator():
+    import sys
+    import threading
+    from http.server import HTTPServer
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+    import clubfm_simulator as sim
+
+    srv = HTTPServer(("127.0.0.1", 0), sim.H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://127.0.0.1:{srv.server_address[1]}"
+
+
+def test_end_to_end_simulated_clubfm_alert_sound_dedupe_and_backoff(tmp_path):
+    """Real engine + real adapter + real HTTP against tools/clubfm_simulator.py (no maplefm.gg traffic):
+    the injected under-priced row is detected, the profit band's sound fires automatically, the same shop
+    seen by maplestory.watch is not alerted twice, the live feed is used with the token and backs off without it."""
+    import asyncio
+
+    from maple_flip_hunter.adapters.maplestory_watch import MapleStoryWatchAdapter
+    from maple_flip_hunter.collector.engine import MarketEngine
+    from maple_flip_hunter.config import Settings
+    from maple_flip_hunter.db import Database
+    from maple_flip_hunter.models import Level
+    from maple_flip_hunter.notifications import Notifier, ensure_sounds
+
+    srv, base = _start_simulator()
+    try:
+        s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_cozy_enabled=False,
+                     source_msw_enabled=False, source_clubfm_permission_granted=True, source_clubfm_token="demo-token",
+                     source_clubfm_base_url=base, source_clubfm_live_backoff_s=5)
+        n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
+        played = []
+        real_play = n.play
+        n.play = lambda sid, volume=None: (played.append(sid), real_play(sid, volume))  # type: ignore[method-assign]
+        eng = MarketEngine(s, Database(":memory:"), n)
+        cf = next(a for a in eng.adapters if isinstance(a, ClubFMAdapter))
+        assert cf.base_url == base and len(eng.adapters) == 1
+        loop = asyncio.new_event_loop()
+        listings = loop.run_until_complete(cf.poll())
+        assert cf.live_used and cf.mode == "live" and cf.next_delay() == s.source_clubfm_live_interval_s
+        assert listings and all(l.source == "clubfm" and l.channel and l.fm_room for l in listings)
+        opps = loop.run_until_complete(eng.ingest(listings))
+        jack = [o for o in opps if o.level == Level.JACKPOT and o.listing.seller == "NoobTrader"]
+        assert jack, [(o.level, o.listing.seller, o.reasons) for o in opps][:5]
+        assert played and played[-1] in ("melody", "jackpot", "bell") and n.sound_latency_ms
+        assert jack[0].valuation.net_profit >= 10_000 and n.last_sound == eng.sound_for(jack[0])
+        # same shop/item/price arriving from maplestory.watch (no channel) = duplicate, no second alert
+        j = jack[0].listing
+        from tests.conftest import make_listing
+        dup = make_listing(name=j.item_name, price=j.price, seller=j.seller, channel=None, fm_room=None, source="msw",
+                           item_id=None, ref=None, age_s=3)
+        before = len(played)
+        loop.run_until_complete(eng.ingest([dup]))
+        assert len(played) == before                                   # no second sound
+        assert eng.db.conn.execute("SELECT COUNT(*) FROM listing_events WHERE kind='duplicate' AND seller='NoobTrader'").fetchone()[0] == 1
+        assert eng.db.conn.execute("SELECT COUNT(*) FROM notifications").fetchone()[0] == 1
+        # without a token: snapshot mode; with a wrong token: live refused -> back-off doubles, snapshot keeps flowing
+        cf2 = ClubFMAdapter(permission_granted=True, token="wrong", base_url=base, live_backoff_s=5)
+        cf2.bucket.rate = 1000
+        assert loop.run_until_complete(cf2.poll()) and cf2.mode == "snapshot" and cf2._live_failures == 1
+        cf2._live_blocked_until = 0
+        assert loop.run_until_complete(cf2.poll()) and cf2._live_failures == 2
+        assert 9 <= cf2._live_blocked_until - time.time() <= 10.5      # 5 s * 2**1
+        assert cf2.next_delay() == cf2.interval_s
+        loop.run_until_complete(cf.aclose()); loop.run_until_complete(cf2.aclose())
+    finally:
+        srv.shutdown()

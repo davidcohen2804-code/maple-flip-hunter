@@ -62,9 +62,15 @@ class ClubFMAdapter(BaseAdapter):
     rate = 1.0
     burst = 2
 
-    def __init__(self, *args: Any, permission_granted: bool = False, token: str = "", **kwargs: Any):
+    def __init__(self, *args: Any, permission_granted: bool = False, token: str = "", base_url: str = "",
+                 live_interval_s: float = 60.0, live_backoff_s: float = 30.0, **kwargs: Any):
+        if base_url:
+            self.base_url = base_url.rstrip("/")
         super().__init__(*args, **kwargs)
         self.permission_granted = permission_granted
+        self.live_interval_s = max(5.0, float(live_interval_s))
+        self.live_backoff_s = max(5.0, float(live_backoff_s))
+        self._live_failures = 0
         self.token = token.strip()
         if self.token:
             self.set_header("Authorization", f"Bearer {self.token}")
@@ -107,16 +113,35 @@ class ClubFMAdapter(BaseAdapter):
         try:
             data = await self.fetch_json("/data/live", params)
         except FetchError as exc:
-            if "401" in str(exc) or "403" in str(exc):
-                self._live_blocked_until = time.time() + 600       # don't hammer a gate that said no
-                log.warning("clubfm: live feed refused (%s); using the public snapshot", exc)
-                self.health.detail = "live feed refused, using snapshot"
+            self._live_backoff(f"live feed refused/failed ({exc})")
             return None
         if not isinstance(data, dict) or "cols" not in data:
-            log.warning("clubfm: live feed has an unexpected shape; using the public snapshot")
+            self._live_backoff("live feed has an unexpected shape")
             return None
+        self._live_failures = 0
         self.live_used = True
         return data
+
+    def _live_backoff(self, why: str) -> None:
+        """Exponential back-off for the live feed (their rule: start at 30 s, one connection): 30, 60, 120 … ≤ 600 s.
+        The public snapshot keeps the source alive meanwhile."""
+        delay = min(600.0, self.live_backoff_s * (2 ** self._live_failures))
+        self._live_failures += 1
+        self._live_blocked_until = time.time() + delay
+        self.live_used = False
+        log.warning("clubfm: %s; using the public snapshot, live retry in %.0f s", why, delay)
+        self.health.detail = f"{why}; snapshot mode, live retry in {delay:.0f} s"
+
+    def next_delay(self) -> float:
+        """Live mode polls faster (their feed updates every minute); snapshot mode respects the 60 s limit."""
+        return self.live_interval_s if self.live_used else self.interval_s
+
+    def online_detail(self) -> str:
+        return f"{self.mode} mode"
+
+    @property
+    def mode(self) -> str:
+        return "live" if self.live_used else "snapshot"
 
     async def poll(self) -> list[Listing]:
         if not self.permission_granted:

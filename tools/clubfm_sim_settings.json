@@ -1,0 +1,13 @@
+{
+  "min_buy_price": 0,
+  "max_buy_price": 1000000,
+  "min_net_profit": 5000,
+  "source_cozy_enabled": false,
+  "source_msw_enabled": false,
+  "source_clubfm_enabled": true,
+  "source_clubfm_permission_granted": true,
+  "source_clubfm_token": "demo-token",
+  "source_clubfm_base_url": "http://127.0.0.1:8765",
+  "source_clubfm_interval_s": 30,
+  "source_clubfm_live_interval_s": 10
+}
