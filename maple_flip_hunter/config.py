@@ -133,6 +133,8 @@ class Settings(BaseModel):
 
     # --- UI memory ------------------------------------------------------
     ui_settings_dialog_geometry: str = Field("", description="base64 QWidget.saveGeometry() of the Settings window")
+    ui_main_window_geometry: str = Field("", description="base64 saveGeometry() of the main window (incl. maximized state)")
+    ui_main_splitter_state: str = Field("", description="base64 QSplitter.saveState() — table / details split")
 
     def save(self, path: Path | None = None) -> None:
         path = path or settings_path()

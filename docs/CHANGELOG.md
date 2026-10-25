@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.4 — 2026-10-26 (main window: free resize, no clipping, layout memory)
+* Main window resizes freely from every edge and corner down to 900×560; long status texts (source list, coverage)
+  wrap/shrink instead of forcing the window wider — this was what pushed buttons and data off-screen until the window
+  was maximized. Full values stay available as tooltips.
+* Draggable splitter between the table and the details panel (8 px handle, neither side can collapse; table ≥ 420 px,
+  details ≥ 320 px); both adapt to the window size, the Item column takes the remaining width.
+* Window size, position, maximized state and the splitter split are remembered across sessions and restored fully
+  on-screen (small/large screens, Windows scaling, second monitor); saved on close, on tray-hide and on Quit.
+* GUI tests: resize to 900×560 / 1366×728 / 1920×1040 / 1000×650 without clipping, splitter drag, maximize/restore,
+  close → reopen restores geometry and split, off-screen geometry pulled back. 80 unit tests.
+
+
 ## 0.6.3 — 2026-10-26 (UI: 4-column table, settings window that fits the screen)
 * Opportunity table shows exactly **Item · Buy · Market Value · Quick Sale** (thousands separators, right-aligned
   numbers, Item column stretches, no horizontal scrollbar). The level is a subtle colour on the item name (red JACKPOT,

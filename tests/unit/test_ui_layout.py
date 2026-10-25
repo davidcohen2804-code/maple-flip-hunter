@@ -125,3 +125,55 @@ def test_settings_dialog_scrolls_keeps_buttons_visible_and_remembers_geometry(ap
     out = dlg2.result_settings(s)
     assert out.ui_settings_dialog_geometry == dlg2.saved_geometry()
     dlg2.reject()
+
+
+def test_main_window_resizes_freely_without_clipping_and_remembers_layout(app, tmp_path):
+    w, eng = _window(tmp_path)
+    w.show()
+    app.processEvents()
+    # a small screen: nothing in the window demands more than 900×560
+    assert w.minimumWidth() <= 900 and w.minimumHeight() <= 560
+    assert w.centralWidget().minimumSizeHint().width() <= 900, w.centralWidget().minimumSizeHint()
+    # very long status texts must not widen the minimum size (this is what used to push content off-screen)
+    w.stat_labels["sources"].setText("cozy.markets: AUTH REQUIRED · maplestory.watch: ONLINE · Club FM (maplefm.gg): ONLINE — live mode · " * 2)
+    app.processEvents()
+    assert w.centralWidget().minimumSizeHint().width() <= 900
+    for size in ((900, 560), (1366, 728), (1920, 1040), (1000, 650)):
+        w.resize(*size)
+        app.processEvents()
+        assert (w.width(), w.height()) == size
+        total = w.split.width()
+        assert abs(sum(w.split.sizes()) + w.split.handleWidth() - total) <= 8   # panels fill the splitter
+        assert w.table.width() >= 420 and w.details.parentWidget().width() >= 320
+        assert sum(w.table.columnWidth(i) for i in range(4)) <= w.table.viewport().width() + 2
+        assert w.btn_copy_loc.isVisible() and w.btn_copy_loc.width() > 40 and w.vol.isVisible()
+    # draggable split: move it and the value is kept
+    scr = w._screen_rect()
+    tw, th = max(900, min(1366, scr.width() - 40)), max(560, min(728, scr.height() - 40))
+    w.resize(tw, th)
+    app.processEvents()
+    want_right = int(w.split.width() * 0.42)
+    w.split.setSizes([w.split.width() - want_right, want_right])
+    app.processEvents()
+    assert abs(w.split.sizes()[1] - want_right) <= 40, (w.split.sizes(), want_right)
+    assert not w.split.childrenCollapsible()
+    # maximize / restore keeps everything, and the layout survives close -> reopen
+    w.showMaximized(); app.processEvents()
+    w.showNormal(); app.processEvents()
+    w.move(w._screen_rect().left() + 15, w._screen_rect().top() + 25)
+    app.processEvents()
+    w.tray.hide()                                   # so close() really closes (no tray in tests)
+    w.close(); app.processEvents()
+    assert w.settings.ui_main_window_geometry and w.settings.ui_main_splitter_state
+    w2 = MainWindow(eng, w.settings, w.notifier)
+    w2.show(); app.processEvents()
+    fits = scr.width() >= tw and scr.height() >= th
+    if fits:
+        assert abs(w2.width() - tw) <= 2 and abs(w2.height() - th) <= 2
+        assert w2._screen_rect().contains(w2.geometry())
+    assert abs(w2.split.sizes()[1] - w.split.sizes()[1]) <= 40
+    # a remembered position off any screen is pulled back on-screen
+    from maple_flip_hunter.ui.settings_dialog import fit_on_screen
+    r = fit_on_screen(QRect(-5000, -5000, 1366, 728), w2._screen_rect(), 1.0)
+    assert w2._screen_rect().contains(r)
+    w2.tray.hide(); w2.close()

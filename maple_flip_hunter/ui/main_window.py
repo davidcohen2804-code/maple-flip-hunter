@@ -5,12 +5,12 @@ import logging
 import time
 from typing import Optional
 
-from PySide6.QtCore import QByteArray, Qt, QTimer, QUrl
+from PySide6.QtCore import QByteArray, QRect, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QMainWindow, QMenu, QPushButton, QSlider, QSplitter, QSystemTrayIcon, QTableView,
-                               QTextBrowser, QVBoxLayout, QWidget, QComboBox, QCheckBox)
+                               QSizePolicy, QTextBrowser, QVBoxLayout, QWidget, QComboBox, QCheckBox)
 
 from .. import APP_NAME, USER_AGENT, __version__
 from ..collector.engine import MarketEngine
@@ -19,7 +19,7 @@ from ..config import Settings
 from ..models import Level, Opportunity, SourceHealth
 from .bridge import EngineBridge
 from .alert_popup import AlertPopup
-from .settings_dialog import SettingsDialog
+from .settings_dialog import SettingsDialog, fit_on_screen
 from .startup import set_run_on_startup
 from .table_model import OpportunityFilter, OpportunityModel, fmt_age
 from .theme import ACCENT, GREEN, LEVEL_COLORS, MUTED, QSS, RED, STATE_COLORS, YELLOW
@@ -55,6 +55,7 @@ class MainWindow(QMainWindow):
         self.notifier = notifier
         self.setWindowTitle(f"{APP_NAME} v{__version__}")
         self.setWindowIcon(make_icon())
+        self.setMinimumSize(900, 560)           # free resizing from every edge/corner above this
         self.resize(1480, 900)
         self.setStyleSheet(QSS)
         self._quitting = False
@@ -124,6 +125,11 @@ class MainWindow(QMainWindow):
             k.setObjectName("stat")
             v = QLabel("—")
             v.setObjectName("statValue")
+            v.setWordWrap(True)
+            v.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # long texts never force the window wider
+            v.setMinimumWidth(60)
+            k.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+            g.setColumnStretch(i, 1)
             g.addWidget(k, 0, i)
             g.addWidget(v, 1, i)
             self.stat_labels[key] = v
@@ -150,7 +156,7 @@ class MainWindow(QMainWindow):
             cb.toggled.connect(self._apply_filters)
             filt.addWidget(cb)
         filt.addSpacing(16)
-        filt.addWidget(QLabel("Freshness:"))
+        filt.addWidget(QLabel("Fresh:"))
         self.fresh = QComboBox()
         for label, secs in (("Any", None), ("Last 5 min", 300), ("Last 15 min", 900), ("Last 1 h", 3600)):
             self.fresh.addItem(label, secs)
@@ -162,15 +168,15 @@ class MainWindow(QMainWindow):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._apply_filters)
         filt.addWidget(self.search, 1)
-        filt.addWidget(QLabel("Notifications"))
+        filt.addWidget(QLabel("Alerts"))
         self.cb_notif = QCheckBox()
         self.cb_notif.setChecked(self.settings.notifications_enabled)
         self.cb_notif.toggled.connect(self._toggle_notifications)
         filt.addWidget(self.cb_notif)
-        filt.addWidget(QLabel("Volume"))
+        filt.addWidget(QLabel("Vol"))
         self.vol = QSlider(Qt.Horizontal)
         self.vol.setRange(0, 100)
-        self.vol.setFixedWidth(140)
+        self.vol.setFixedWidth(110)
         self.vol.setValue(int(self.settings.alert_volume * 100))
         self.vol.valueChanged.connect(self._volume)
         filt.addWidget(self.vol)
@@ -178,7 +184,13 @@ class MainWindow(QMainWindow):
 
         # table + details
         split = QSplitter(Qt.Horizontal)
+        self.split = split
+        split.setChildrenCollapsible(False)
+        split.setHandleWidth(8)
+        split.setStyleSheet("QSplitter::handle { background: #2a3442; border-radius: 3px; margin: 40px 2px; }"
+                            "QSplitter::handle:hover { background: #f5a524; }")
         self.table = QTableView()
+        self.table.setMinimumWidth(420)
         self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
         self.table.sortByColumn(-1, Qt.AscendingOrder)      # no sort column = newest first; click a header to sort
@@ -200,6 +212,7 @@ class MainWindow(QMainWindow):
         split.addWidget(self.table)
 
         right = QWidget()
+        right.setMinimumWidth(320)
         rv = QVBoxLayout(right)
         rv.setContentsMargins(0, 0, 0, 0)
         rv.setSpacing(8)
@@ -219,8 +232,11 @@ class MainWindow(QMainWindow):
         btns.addWidget(self.btn_copy_loc)
         rv.addLayout(btns)
         split.addWidget(right)
+        split.setStretchFactor(0, 3)
+        split.setStretchFactor(1, 2)
         split.setSizes([980, 480])
         root.addWidget(split, 1)
+        self._restore_layout()
 
         self.setCentralWidget(central)
         self.status = self.statusBar()
@@ -254,12 +270,46 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip(APP_NAME)
         self.tray.show()
 
+    # ------------------------------------------------------------ layout memory
+    def _screen_rect(self) -> QRect:
+        scr = self.screen() or QGuiApplication.primaryScreen()
+        return scr.availableGeometry() if scr else QRect(0, 0, 1366, 768)
+
+    def _restore_layout(self) -> None:
+        s = self.settings
+        if s.ui_main_window_geometry:
+            try:
+                self.restoreGeometry(QByteArray.fromBase64(s.ui_main_window_geometry.encode("ascii")))
+            except Exception:  # noqa: BLE001
+                pass
+        if s.ui_main_splitter_state:
+            try:
+                self.split.restoreState(QByteArray.fromBase64(s.ui_main_splitter_state.encode("ascii")))
+            except Exception:  # noqa: BLE001
+                pass
+        if not self.isMaximized():
+            screen = self._screen_rect()
+            wanted = self.geometry() if s.ui_main_window_geometry else QRect(0, 0, min(1480, screen.width() - 40),
+                                                                             min(900, screen.height() - 40))
+            if not s.ui_main_window_geometry:
+                wanted.moveCenter(screen.center())
+            self.setGeometry(fit_on_screen(wanted, screen, max_fraction=1.0))
+
+    def save_layout(self) -> None:
+        self.settings.ui_main_window_geometry = bytes(self.saveGeometry().toBase64()).decode("ascii")
+        self.settings.ui_main_splitter_state = bytes(self.split.saveState().toBase64()).decode("ascii")
+        try:
+            self.settings.save()
+        except Exception:  # noqa: BLE001
+            log.exception("could not save window layout")
+
     def show_normal(self) -> None:
         self.showNormal()
         self.raise_()
         self.activateWindow()
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        self.save_layout()
         if self._quitting or not self.tray.isVisible():
             self.engine.stop()
             event.accept()
@@ -271,6 +321,7 @@ class MainWindow(QMainWindow):
 
     def quit_app(self) -> None:
         self._quitting = True
+        self.save_layout()
         self.engine.stop()
         QApplication.instance().quit()
 
@@ -416,6 +467,9 @@ class MainWindow(QMainWindow):
         cov = e.coverage()
         self.stat_labels["coverage"].setText(
             f"{cov['items_with_listings']:,} items seen / {cov['catalog_items']:,} catalog · {cov['listings_1h']:,} rows last 1h")
+        for key, lbl in self.stat_labels.items():
+            if key != "coverage":
+                lbl.setToolTip(lbl.text())
         self.stat_labels["coverage"].setToolTip(
             "Coverage = what the connected community scanners uploaded. Shops nobody scanned are NOT visible.")
         self.model.refresh_ages()
