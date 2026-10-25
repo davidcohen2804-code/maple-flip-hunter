@@ -71,6 +71,8 @@ class ClubFMAdapter(BaseAdapter):
         self._seen_keys: dict[str, float] = {}
         self._last_T: float = 0.0
         self._rows_cache: list[dict[str, Any]] = []
+        self._live_blocked_until = 0.0
+        self.live_used = False
         if not permission_granted:
             self._set_status(SourceStatus.UNSUPPORTED, "permission from Club FM not recorded (Terms of Use §2)")
 
@@ -96,11 +98,33 @@ class ClubFMAdapter(BaseAdapter):
             source_url=f"https://maplefm.gg/#item={name}",
         )
 
+    async def _fetch_live(self) -> Optional[dict[str, Any]]:
+        """Incremental feed (needs the token Club FM issued). Returns None when not permitted / not available,
+        in which case the public snapshot is used. Never retried against a 401/403 within the same cycle."""
+        if not self.token or self._live_blocked_until > time.time():
+            return None
+        params = {"after": int(self._last_T * 1000)} if self._last_T else None
+        try:
+            data = await self.fetch_json("/data/live", params)
+        except FetchError as exc:
+            if "401" in str(exc) or "403" in str(exc):
+                self._live_blocked_until = time.time() + 600       # don't hammer a gate that said no
+                log.warning("clubfm: live feed refused (%s); using the public snapshot", exc)
+                self.health.detail = "live feed refused, using snapshot"
+            return None
+        if not isinstance(data, dict) or "cols" not in data:
+            log.warning("clubfm: live feed has an unexpected shape; using the public snapshot")
+            return None
+        self.live_used = True
+        return data
+
     async def poll(self) -> list[Listing]:
         if not self.permission_granted:
             self._set_status(SourceStatus.UNSUPPORTED, "permission from Club FM not recorded (Terms of Use §2)")
             return []
-        snap = await self.fetch_json("/data/snap")
+        snap = await self._fetch_live()
+        if snap is None:
+            snap = await self.fetch_json("/data/snap")
         if not snap:
             raise FetchError("empty snapshot")
         rows = decode_snapshot(snap)
@@ -108,12 +132,15 @@ class ClubFMAdapter(BaseAdapter):
         T = float(snap.get("T") or 0) / 1000.0
         now = time.time()
         out: list[Listing] = []
-        active = {d.get("@") for d in (snap.get("D") or {}).get("active") or [] if isinstance(d, dict)}
-        sales = {d.get("@") for d in (snap.get("D") or {}).get("sales") or [] if isinstance(d, dict)}
+        D = snap.get("D") or {}
+        active = {d.get("@") for d in D.get("active") or [] if isinstance(d, dict)}
+        sales = {d.get("@") for d in D.get("sales") or [] if isinstance(d, dict)}
         for idx, r in enumerate(rows):
             is_sale = idx in sales or bool(r.get("sold"))
-            if idx not in active and not is_sale:
+            if active and idx not in active and not is_sale:
                 continue
+            if not active and str(r.get("st") or "") != "up" and not is_sale:
+                continue   # live payloads without an index list: rows flagged "up" are the active asks
             lst = self._row_to_listing(r)
             if not lst:
                 continue

@@ -1,9 +1,16 @@
 from __future__ import annotations
 
-from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout, QGroupBox,
-                               QHBoxLayout, QLabel, QLineEdit, QSpinBox, QVBoxLayout)
+from typing import Optional
 
-from ..config import Settings
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
+                               QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
+                               QSlider, QSpinBox, QVBoxLayout, QWidget)
+
+from ..config import Settings, SoundTier, validate_tiers
+from ..notifications.sounds import sound_labels
+
+NO_MAX = 100_000_000      # spin-box value that means "no upper bound"
 
 
 def _mesos(v: int, maximum: int = 50_000_000) -> QSpinBox:
@@ -26,9 +33,38 @@ def _pct(v: float, maximum: float = 1.0) -> QDoubleSpinBox:
     return sb
 
 
+class TierRow:
+    """Widgets of one profit band: [enabled] from [__] to [__] sound [v] (Preview) (Remove)."""
+
+    def __init__(self, tier: SoundTier, labels: dict[str, str], preview, remove) -> None:
+        self.enabled = QCheckBox(tier.name or "Tier")
+        self.enabled.setChecked(tier.enabled)
+        self.lo = _mesos(tier.min_profit, NO_MAX)
+        self.hi = _mesos(NO_MAX if tier.max_profit is None else tier.max_profit, NO_MAX)
+        self.hi.setSpecialValueText("")
+        self.hi.setToolTip("Set to the maximum (scroll to the top) for 'no upper bound'")
+        self.sound = QComboBox()
+        for sid, label in labels.items():
+            self.sound.addItem(label, sid)
+        idx = self.sound.findData(tier.sound)
+        self.sound.setCurrentIndex(idx if idx >= 0 else 0)
+        self.preview = QPushButton("▶ Preview")
+        self.preview.clicked.connect(lambda: preview(self.sound.currentData()))
+        self.remove = QPushButton("✕")
+        self.remove.setFixedWidth(32)
+        self.remove.clicked.connect(lambda: remove(self))
+        self.widgets = [self.enabled, self.lo, QLabel("to"), self.hi, self.sound, self.preview, self.remove]
+
+    def to_tier(self) -> SoundTier:
+        hi = self.hi.value()
+        return SoundTier(name=self.enabled.text(), min_profit=self.lo.value(), max_profit=None if hi >= NO_MAX else hi,
+                         sound=self.sound.currentData(), enabled=self.enabled.isChecked())
+
+
 class SettingsDialog(QDialog):
-    def __init__(self, settings: Settings, parent=None):
+    def __init__(self, settings: Settings, parent=None, notifier=None):
         super().__init__(parent)
+        self.notifier = notifier
         self.setWindowTitle("Settings — Maple Flip Hunter")
         self.setMinimumWidth(560)
         s = settings
@@ -115,6 +151,41 @@ class SettingsDialog(QDialog):
             v3.addWidget(cb)
         root.addWidget(g3)
 
+        gs = QGroupBox("Sound alerts by NET PROFIT (the profit the app computed, not the JACKPOT/GOOD label)")
+        vs = QVBoxLayout(gs)
+        vs.setContentsMargins(16, 20, 16, 16)
+        hint = QLabel("Each band plays its own melodic sound. Bands may not overlap; a disabled band alerts silently. "
+                      "Upper bound at maximum = unlimited.")
+        hint.setObjectName("subtitle")
+        hint.setWordWrap(True)
+        vs.addWidget(hint)
+        self.tier_grid = QGridLayout()
+        self.tier_grid.setHorizontalSpacing(8)
+        self.tier_grid.setVerticalSpacing(6)
+        grid_host = QWidget()
+        grid_host.setLayout(self.tier_grid)
+        vs.addWidget(grid_host)
+        self.tier_rows: list[TierRow] = []
+        self._labels = sound_labels()
+        for t in s.sound_tiers:
+            self._add_tier_row(t)
+        row_btns = QHBoxLayout()
+        self.btn_add_tier = QPushButton("+ Add band")
+        self.btn_add_tier.clicked.connect(self._add_tier_clicked)
+        row_btns.addWidget(self.btn_add_tier)
+        row_btns.addStretch(1)
+        row_btns.addWidget(QLabel("Volume"))
+        self.volume = QSlider(Qt.Horizontal)
+        self.volume.setRange(0, 100)
+        self.volume.setValue(int(s.alert_volume * 100))
+        self.volume.setFixedWidth(160)
+        self.volume.valueChanged.connect(self._volume_changed)
+        row_btns.addWidget(self.volume)
+        self.vol_label = QLabel(f"{self.volume.value()} %")
+        row_btns.addWidget(self.vol_label)
+        vs.addLayout(row_btns)
+        root.addWidget(gs)
+
         g4 = QGroupBox("Sources")
         f4 = QFormLayout(g4)
         f4.setContentsMargins(16, 20, 16, 16)
@@ -157,9 +228,56 @@ class SettingsDialog(QDialog):
         row.addWidget(bb)
         root.addLayout(row)
 
+    # ---------------------------------------------------------------- tiers
+    def _add_tier_row(self, tier: SoundTier) -> None:
+        r = TierRow(tier, self._labels, self._preview, self._remove_tier)
+        self.tier_rows.append(r)
+        self._relayout_tiers()
+
+    def _relayout_tiers(self) -> None:
+        while self.tier_grid.count():
+            item = self.tier_grid.takeAt(0)
+            if item.widget() is not None:
+                item.widget().setParent(None)
+        for i, r in enumerate(self.tier_rows):
+            for c, w in enumerate(r.widgets):
+                self.tier_grid.addWidget(w, i, c)
+
+    def _add_tier_clicked(self) -> None:
+        tiers = [r.to_tier() for r in self.tier_rows]
+        start = max([t.max_profit for t in tiers if t.max_profit is not None] + [0]) + 1
+        new = SoundTier(name=f"Band {len(tiers) + 1}", min_profit=start, max_profit=start + 9_999, sound="chime")
+        self._add_tier_row(new)
+
+    def _remove_tier(self, row: TierRow) -> None:
+        self.tier_rows.remove(row)
+        for w in row.widgets:
+            w.setParent(None)
+            w.deleteLater()
+        self._relayout_tiers()
+
+    def _preview(self, sound_id: str) -> None:
+        if self.notifier is not None:
+            self.notifier.play(sound_id, volume=self.volume.value() / 100)
+
+    def _volume_changed(self, v: int) -> None:
+        self.vol_label.setText(f"{v} %")
+
+    def tiers(self) -> list[SoundTier]:
+        return validate_tiers([r.to_tier() for r in self.tier_rows])
+
+    def accept(self) -> None:  # noqa: D401
+        try:
+            self.tiers()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Sound bands overlap", f"{exc}\n\nAdjust the bands so no two overlap.")
+            return
+        super().accept()
+
     def result_settings(self, base: Settings) -> Settings:
         d = base.model_dump()
         d.update(
+            sound_tiers=[t.model_dump() for t in self.tiers()], alert_volume=self.volume.value() / 100,
             min_buy_price=self.min_buy.value(), max_buy_price=self.max_buy.value(), min_net_profit=self.min_profit.value(),
             quick_flips_only=self.cb_quick.isChecked(), quick_flip_min_net_profit=self.q_profit.value(),
             quick_flip_min_confidence=self.q_conf.value() / 100, quick_flip_max_data_age_s=self.q_age.value(),

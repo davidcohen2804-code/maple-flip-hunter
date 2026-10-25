@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         self.btn_start.setObjectName("primary")
         self.btn_start.clicked.connect(self.toggle_scanner)
         self.btn_test = QPushButton("🔊  Test alarm")
-        self.btn_test.clicked.connect(lambda: self.notifier.play("JACKPOT"))
+        self.btn_test.clicked.connect(self._test_alarm)
         self.btn_settings = QPushButton("⚙  Settings")
         self.btn_settings.clicked.connect(self.open_settings)
         for b in (self.btn_test, self.btn_settings, self.btn_start):
@@ -237,7 +237,7 @@ class MainWindow(QMainWindow):
         a_toggle = QAction("Start / Stop scanner", self)
         a_toggle.triggered.connect(self.toggle_scanner)
         a_test = QAction("Test alarm", self)
-        a_test.triggered.connect(lambda: self.notifier.play("JACKPOT"))
+        a_test.triggered.connect(self._test_alarm)
         a_quit = QAction("Quit", self)
         a_quit.triggered.connect(self.quit_app)
         for a in (a_show, a_toggle, a_test):
@@ -281,6 +281,11 @@ class MainWindow(QMainWindow):
             self.status.showMessage("Scanner started — discovering the whole accessible market…")
         self._refresh_stats()
 
+    def _test_alarm(self) -> None:
+        """Play the sound of the highest enabled profit band (the one a JACKPOT-sized profit would trigger)."""
+        enabled = [t for t in self.settings.sound_tiers if t.enabled]
+        self.notifier.play(enabled[-1].sound if enabled else "jackpot")
+
     def _toggle_notifications(self, on: bool) -> None:
         self.settings.notifications_enabled = on
         self.settings.save()
@@ -292,13 +297,16 @@ class MainWindow(QMainWindow):
         self.settings.save()
 
     def open_settings(self) -> None:
-        dlg = SettingsDialog(self.settings, self)
+        dlg = SettingsDialog(self.settings, self, notifier=self.notifier)
         if dlg.exec():
             old = self.settings
             new = dlg.result_settings(self.settings)
-            new.alert_volume = self.settings.alert_volume
             self.settings = new
             new.save()
+            self.vol.blockSignals(True)
+            self.vol.setValue(int(new.alert_volume * 100))
+            self.vol.blockSignals(False)
+            self.notifier.set_volume(new.alert_volume)
             self.engine.update_settings(new)
             self.cb_notif.setChecked(new.notifications_enabled)
             set_run_on_startup(new.run_on_windows_startup)

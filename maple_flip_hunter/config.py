@@ -5,11 +5,56 @@ import json
 import logging
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .paths import settings_path
 
 log = logging.getLogger(__name__)
+
+
+class SoundTier(BaseModel):
+    """One profit band -> one sound. Bands are half-open [min_profit, max_profit]; max_profit None = no upper bound."""
+    name: str = ""
+    min_profit: int = Field(0, ge=0)
+    max_profit: int | None = Field(None, ge=0)
+    sound: str = "bell"              # id from notifications.sounds.SOUND_LIBRARY
+    enabled: bool = True
+
+    def contains(self, net_profit: int) -> bool:
+        return net_profit >= self.min_profit and (self.max_profit is None or net_profit <= self.max_profit)
+
+    @model_validator(mode="after")
+    def _range_ok(self) -> "SoundTier":
+        if self.max_profit is not None and self.max_profit < self.min_profit:
+            raise ValueError(f"tier '{self.name}': max_profit {self.max_profit} below min_profit {self.min_profit}")
+        return self
+
+
+def default_sound_tiers() -> list[SoundTier]:
+    return [
+        SoundTier(name="Nice flip", min_profit=10_000, max_profit=19_999, sound="bell"),
+        SoundTier(name="Great flip", min_profit=20_000, max_profit=49_999, sound="melody"),
+        SoundTier(name="JACKPOT", min_profit=50_000, max_profit=None, sound="jackpot"),
+    ]
+
+
+def validate_tiers(tiers: list[SoundTier]) -> list[SoundTier]:
+    """Sort by min_profit and refuse overlapping bands (gaps are allowed: a profit in a gap alerts silently)."""
+    out = sorted(tiers, key=lambda t: t.min_profit)
+    for a, b in zip(out, out[1:]):
+        if a.max_profit is None or b.min_profit <= a.max_profit:
+            raise ValueError(f"sound tiers overlap: '{a.name}' [{a.min_profit}, {a.max_profit}] and "
+                             f"'{b.name}' [{b.min_profit}, {b.max_profit}]")
+    return out
+
+
+def tier_for_profit(tiers: list[SoundTier], net_profit: int | None) -> SoundTier | None:
+    if net_profit is None:
+        return None
+    for t in tiers:
+        if t.contains(net_profit):
+            return t
+    return None
 
 
 class Settings(BaseModel):
@@ -47,6 +92,14 @@ class Settings(BaseModel):
     alert_volume: float = Field(0.9, ge=0.0, le=1.0)
     alert_jackpot: bool = True
     alert_good: bool = True
+    # Sound per NET-PROFIT band (the profit the pricing engine actually computed, not the JACKPOT/GOOD label).
+    # Tiers must not overlap; a disabled tier (or a profit outside every tier) alerts without sound.
+    sound_tiers: list[SoundTier] = Field(default_factory=default_sound_tiers)
+
+    @model_validator(mode="after")
+    def _tiers_ok(self) -> "Settings":
+        self.sound_tiers = validate_tiers(self.sound_tiers)
+        return self
     show_uncertain: bool = True
     start_minimized: bool = False
     run_on_windows_startup: bool = False

@@ -27,6 +27,7 @@ class Notifier:
         self._effects: dict[str, object] = {}
         self._backend = "silent"
         self._lock = threading.Lock()
+        self.last_sound: Optional[str] = None
         if enable_audio:
             self._init_backend()
 
@@ -53,10 +54,13 @@ class Notifier:
                 pass
 
     # ------------------------------------------------------------ playback
-    def play(self, level: str) -> None:
+    def play(self, level: str, volume: Optional[float] = None) -> None:
+        """Play a sound by id ("bell", "melody", "jackpot", ...) or by legacy level name ("JACKPOT", ...)."""
         path = self.sounds.get(level) or self.sounds.get("GOOD FLIP")
         if not path or not self.enable_audio:
             return
+        if volume is not None:
+            self.set_volume(volume)
         if self._backend == "qt":
             self._play_qt(level, path)
         elif self._backend == "winsound":
@@ -89,14 +93,18 @@ class Notifier:
             self.play(level)
 
     # --------------------------------------------------------------- alert
-    def alert(self, opp: Opportunity, level: str, title: str, body: str) -> None:
+    def alert(self, opp: Opportunity, level: str, title: str, body: str, sound: Optional[str] = "__level__") -> None:
+        """`sound` = sound id chosen by the profit tier; None = silent alert (toast only);
+        the default sentinel keeps the old behaviour of playing the level's default sound."""
         import time
 
         with self._lock:
             self.history.append((time.time(), level, title, body))
             if len(self.history) > 500:
                 del self.history[:100]
-        self.play(level)
+        self.last_sound = level if sound == "__level__" else sound
+        if self.last_sound is not None:
+            self.play(self.last_sound)
         if self.toast_callback is not None:
             try:
                 self.toast_callback(opp, level, title, body)

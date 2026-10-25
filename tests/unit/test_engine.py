@@ -311,3 +311,11 @@ def test_stop_during_an_in_flight_http_request_closes_client_and_returns_fast():
     eng.start()                                       # and a fresh client is used afterwards
     assert not a.client.is_closed
     eng.stop()
+
+
+def test_cross_source_duplicate_without_channel_is_merged_and_fresher_row_wins_nothing_twice():
+    eng, alerts = build()
+    a = make_listing(price=16_000, source="cozy", channel=24)
+    b = make_listing(price=16_000, source="clubfm", item_id=None, channel=None)   # Club FM did not read the channel
+    run(eng.ingest([a, b]))
+    assert len(alerts) == 1 and eng.metrics.listings_duplicate == 1

@@ -10,7 +10,7 @@ from typing import Any, Callable, Optional
 
 from ..adapters import ClubFMAdapter, CozyAdapter, MapleStoryWatchAdapter
 from ..adapters.base import BaseAdapter
-from ..config import Settings
+from ..config import Settings, tier_for_profit
 from ..db import Database
 from ..detection import Detector
 from ..metrics import Metrics
@@ -288,6 +288,25 @@ class MarketEngine:
                 else:
                     ev.secondary_reference = ev.secondary_reference or int(idx["typical"])
                     ev.secondary_label = ev.secondary_label or "maplestory.watch typical"
+        # Club FM (when permitted): completed sales + live asks for rows that came from another source
+        cf = next((a for a in self.adapters if isinstance(a, ClubFMAdapter)), None)
+        if cf is not None and cf.name != lst.source and cf.permission_granted:
+            try:
+                cev = await cf.fetch_evidence(lst, self.settings.comp_window_s)
+            except Exception:  # noqa: BLE001
+                cev = None
+            if cev is not None:
+                if ev is None:
+                    ev = cev
+                else:
+                    if ev.sold_count < PricingEngine.MIN_SOLD_FOR_REFERENCE and cev.sold_median:
+                        ev.sold_median, ev.sold_count = cev.sold_median, cev.sold_count
+                        ev.notes.append("completed-sale median taken from Club FM")
+                    ev.sold_recent_24h = max(ev.sold_recent_24h, cev.sold_recent_24h)
+                    ev.comps.extend(cev.comps)
+                    ev.active_asks.extend(cev.active_asks)
+                    if cev.source_data_age_s is not None and (ev.source_data_age_s is None or cev.source_data_age_s < ev.source_data_age_s):
+                        ev.source_data_age_s = cev.source_data_age_s
         if ev is None:
             return None
         # local database: competing asks and sales seen by any source
@@ -334,13 +353,22 @@ class MarketEngine:
         self.metrics.ingest_to_alert_ms.add((opp.notified_at - opp.listing.local_first_seen_at) * 1000)
         self.db.save_opportunity(opp)
         title, body = format_alert(opp)
+        sound = self.sound_for(opp)
         try:
             if self.notifier is not None:
-                self.notifier.alert(opp, level, title, body)
+                self.notifier.alert(opp, level, title, body, sound=sound)
         except Exception:  # noqa: BLE001
             log.exception("notifier failed")
-        self.db.add_notification(opp.key, level, title, body, level)
+        self.db.add_notification(opp.key, level, title, body, sound or "silent")
         self._emit("alert", opp, level, title, body)
+
+    def sound_for(self, opp: Opportunity) -> Optional[str]:
+        """Sound id for this alert, chosen by the computed net profit (quick-sale net; the figure shown in the
+        table). None = alert without sound (tier disabled, or profit outside every tier)."""
+        tier = tier_for_profit(self.settings.sound_tiers, opp.valuation.net_profit)
+        if tier is None or not tier.enabled:
+            return None
+        return tier.sound
 
     # ----------------------------------------------------------- helpers
     def test_alarm(self, level: str = "JACKPOT") -> None:

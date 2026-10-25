@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0 — 2026-10-25 (profit-band sounds, Club FM live feed)
+* **Sound alerts by net profit.** Settings → "Sound alerts by NET PROFIT": editable bands, each with its own melodic
+  sound, enable/disable, ▶ Preview, volume slider, "+ Add band". Defaults: 10,000–19,999 gentle bell; 20,000–49,999
+  happy melody; ≥ 50,000 festive JACKPOT fanfare. Overlapping bands are refused at save time (and a corrupt settings
+  file falls back to defaults). The band is chosen from the **net profit the pricing engine computed** (the figure in
+  the table), not from the JACKPOT / GOOD FLIP label; a disabled band, or a profit outside every band, still shows the
+  row and the Windows toast but plays nothing.
+* **All sounds re-synthesized as pleasant bell tones** built from major-scale notes (no sirens, no sweeps, no partial
+  above 2.2 kHz, peak capped at 80 %). Library: bell, melody, jackpot, chime, harp, soft. Unit test checks the
+  spectrum of every generated sound. Test alarm plays the highest enabled band's sound.
+* **Club FM**: `/data/live?after=` with bearer token is used when it answers; 401/403 → snapshot-only for 10 min, then
+  retried. Club FM completed sales and live asks now feed the valuation of rows that came from other sources (so
+  QUICK FLIPS ONLY can reach its evidence bar). Cross-source duplicates are matched even when one side lacks a channel
+  (within 15 min); the first stored row is kept and its observation time advanced to the freshest sighting. Real
+  requests remain OFF until `source_clubfm_permission_granted` is ticked in Settings.
+* Tests: 69 unit tests (was 60) incl. settings-dialog band editor, sound spectrum, profit-band selection,
+  Club FM live/snapshot switch, Club FM evidence → QUICK FLIPS gate, channel-less cross-source dedupe.
+
+
 ## 0.5.0 — 2026-10-25 (alert filters)
 * Settings: **Minimum purchase price** (default 2,500) and **Maximum purchase price** (default now 10,000). The scanner still
   ingests and stores the whole market; only listings inside the band are evaluated for alerts.

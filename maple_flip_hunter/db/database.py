@@ -121,9 +121,16 @@ class Database:
                 self._event(now, lst, "seen", row["price"], lst.price)
                 return "seen", row["price"]
 
-            # same physical row already known from another source?
+            # same physical row already known from another source? (exact cross key, or the same seller/item/price
+            # within 15 minutes when one side did not read the channel)
             dup = self.conn.execute("SELECT listing_key, source FROM listings WHERE cross_key=? AND sold=0 LIMIT 1",
                                     (cross_key,)).fetchone()
+            if dup is None:
+                dup = self.conn.execute(
+                    "SELECT listing_key, source FROM listings WHERE item_key=? AND lower(seller)=lower(?) AND price=? "
+                    "AND sold=0 AND source!=? AND (channel IS NULL OR ? IS NULL OR channel=?) "
+                    "AND ABS(source_seen_at-?)<900 LIMIT 1",
+                    (lst.item_key, lst.seller, lst.price, lst.source, lst.channel, lst.channel, lst.source_seen_at)).fetchone()
             # Repricing detection. Sources expose no per-listing id, so a reprice is inferred only when the
             # same seller's earlier row for the same item *variant* belongs to an OLDER scan: rows observed in
             # the same scan (within REPRICE_SCAN_GAP_S) are independent listings (e.g. 3 units at 3 prices).
@@ -149,6 +156,9 @@ class Database:
                  lst.model_dump_json()))
             self._touch_item(lst, now)
             if dup and dup["source"] != lst.source:
+                # the freshest observation wins: keep the first row, but advance its observation time
+                self.conn.execute("UPDATE listings SET source_seen_at=MAX(source_seen_at, ?), last_seen_at=? WHERE listing_key=?",
+                                  (lst.source_seen_at, now, dup["listing_key"]))
                 self._event(now, lst, "duplicate", None, lst.price)
                 return "duplicate", None
             if repriced:
