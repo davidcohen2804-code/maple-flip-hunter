@@ -74,6 +74,24 @@ After a "yes": cozy → paste the token (if any) in Settings → cozy.markets to
 
 ---
 
+## 5. HubCW (hubcw.com) — e-mail po@hubcw.com (Terms §6: written permission for automated access)
+
+Subject: Permission request — read-only access to HubCW listings for a personal desktop tool
+
+Hi HubCW team,
+
+I run Maple Flip Hunter, a small personal Windows tool that watches the Classic World Free Market for under-priced
+listings and plays a sound. It reads only; it never posts, bumps, rates, messages or touches the game client.
+
+I would like written permission (Terms §6) for read-only automated access to the public listing board and Price Check
+data (item, price, seller, channel/room, stats, post time), polled no more than once per minute, with a clear
+User-Agent (`MapleFlipHunter/<version>`), and I will link back to HubCW on every item the tool shows. If you have a
+preferred endpoint, token or rate limit, I will use exactly that. If the answer is no, I will not access HubCW
+automatically at all.
+
+Thank you for the site,
+David
+
 ## Not asked
 * **freemarketclassic.com** — their Terms forbid automating the website; they offer their own alert app (FM Sync),
   which is the sanctioned way to get alerts from that data.
