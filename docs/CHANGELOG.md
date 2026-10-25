@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.3 — 2026-10-26 (UI: 4-column table, settings window that fits the screen)
+* Opportunity table shows exactly **Item · Buy · Market Value · Quick Sale** (thousands separators, right-aligned
+  numbers, Item column stretches, no horizontal scrollbar). The level is a subtle colour on the item name (red JACKPOT,
+  green GOOD FLIP, yellow UNCERTAIN, grey stale) plus a faint tint behind JACKPOT rows; hover shows net profit, location
+  and the pricing explanation. Everything else (net profit quick/conservative, ROI/discount, confidence, liquidity and
+  competitors, freshness, CH/FM/shop, source, timestamps, item stats) stays in the details panel on the right.
+  Sorting by any header, filters, database and alerts are unchanged; default order is newest first.
+* Settings window: scrollable body with Save/Cancel pinned at the bottom, initial height ≤ 80 % of the available
+  screen, resizable/draggable, size and position remembered between sessions (also after Cancel), always moved fully
+  on-screen. Geometry rule unit-tested for 1366×768, 1920×1080, 125 %/150 % scaling and a second monitor.
+* Tests: 79 unit tests (table columns/details/sorting, dialog scroll/buttons/geometry).
+
+
 ## 0.6.2 — 2026-10-26 (Club FM: ready to switch on)
 * Club FM adapter: configurable rate limits (`source_clubfm_interval_s` snapshot ≥ 30 s, `source_clubfm_live_interval_s`
   live, `source_clubfm_live_backoff_s` exponential back-off 30→60→120…≤600 s on a refused/failed live feed, one

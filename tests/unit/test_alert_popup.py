@@ -69,6 +69,8 @@ def test_popup_contents_copy_mute_and_stays_until_ok(app, tmp_path):
     eng = _engine(tmp_path, n)
     opps = asyncio.new_event_loop().run_until_complete(eng.ingest([make_listing(price=8_000, ref=42_000, seller="ShopX", age_s=5)]))
     opp = opps[0]
+    for old in list(AlertPopup._open):      # cards left open by other tests
+        old.close()
     pop = AlertPopup(opp, "JACKPOT", on_mute=lambda: n.mute_for(60), latency_ms=12.5)
     pop.show_stacked()
     assert pop.windowFlags() & Qt.WindowStaysOnTopHint and pop.windowFlags() & Qt.WindowDoesNotAcceptFocus

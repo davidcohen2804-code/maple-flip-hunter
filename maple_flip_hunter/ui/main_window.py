@@ -181,7 +181,7 @@ class MainWindow(QMainWindow):
         self.table = QTableView()
         self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
-        self.table.sortByColumn(0, Qt.AscendingOrder)
+        self.table.sortByColumn(-1, Qt.AscendingOrder)      # no sort column = newest first; click a header to sort
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setSelectionMode(QTableView.SingleSelection)
@@ -189,9 +189,13 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setDefaultSectionSize(36)
         hh = self.table.horizontalHeader()
         hh.setStretchLastSection(False)
-        hh.setSectionResizeMode(QHeaderView.Interactive)
-        for i, w in enumerate([120, 230, 150, 90, 100, 100, 100, 70, 130, 90, 50, 60, 130, 70]):
-            self.table.setColumnWidth(i, w)
+        hh.setSectionResizeMode(0, QHeaderView.Stretch)      # Item takes the remaining width
+        for i in (1, 2, 3):
+            hh.setSectionResizeMode(i, QHeaderView.Fixed)
+            self.table.setColumnWidth(i, 120)
+        hh.setMinimumSectionSize(90)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.table.setWordWrap(False)
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
         split.addWidget(self.table)
 
@@ -299,7 +303,10 @@ class MainWindow(QMainWindow):
 
     def open_settings(self) -> None:
         dlg = SettingsDialog(self.settings, self, notifier=self.notifier)
-        if dlg.exec():
+        if not dlg.exec():
+            self.settings.save()               # Cancel still remembers the window's size and position
+            return
+        if True:
             old = self.settings
             new = dlg.result_settings(self.settings)
             self.settings = new

@@ -131,6 +131,9 @@ class Settings(BaseModel):
     retention_events_days: int = 30
     retention_notifications_days: int = 30
 
+    # --- UI memory ------------------------------------------------------
+    ui_settings_dialog_geometry: str = Field("", description="base64 QWidget.saveGeometry() of the Settings window")
+
     def save(self, path: Path | None = None) -> None:
         path = path or settings_path()
         path.write_text(self.model_dump_json(indent=2), encoding="utf-8")

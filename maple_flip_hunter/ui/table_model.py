@@ -11,8 +11,11 @@ from ..detection import passes_user_filters
 from ..models import Level, Opportunity
 from .theme import LEVEL_COLORS, MUTED
 
-COLUMNS = ["Priority", "Item", "Stats", "Buy", "Reference", "Quick sale", "Net profit", "ROI", "Confidence",
-           "Freshness", "CH", "FM", "Shop", "Source"]
+# The table shows only what is needed to decide at a glance; everything else lives in the details panel.
+COLUMNS = ["Item", "Buy", "Market Value", "Quick Sale"]
+COLUMN_TOOLTIPS = {"Item": "Item name — colour shows the level (red JACKPOT, green GOOD FLIP, yellow UNCERTAIN); grey = stale",
+                   "Buy": "Listing price in the shop (mesos)", "Market Value": "Estimated market value (reference price)",
+                   "Quick Sale": "Estimated quick-selling price (not guaranteed)"}
 LEVEL_RANK = {Level.JACKPOT: 0, Level.GOOD: 1, Level.UNCERTAIN: 2, Level.NONE: 3}
 
 
@@ -47,9 +50,8 @@ class OpportunityModel(QAbstractTableModel):
             self.dataChanged.emit(self.index(i, 0), self.index(i, len(COLUMNS) - 1))
 
     def refresh_ages(self) -> None:
-        if self.rows:
-            col = COLUMNS.index("Freshness")
-            self.dataChanged.emit(self.index(0, col), self.index(len(self.rows) - 1, col))
+        if self.rows:   # the Item colour turns grey when a row goes stale
+            self.dataChanged.emit(self.index(0, 0), self.index(len(self.rows) - 1, 0))
 
     def _reindex(self) -> None:
         self._index = {o.key: i for i, o in enumerate(self.rows)}
@@ -65,8 +67,11 @@ class OpportunityModel(QAbstractTableModel):
         return len(COLUMNS)
 
     def headerData(self, section: int, orientation: Qt.Orientation, role: int = Qt.DisplayRole) -> Any:  # noqa: N802
-        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
-            return COLUMNS[section]
+        if orientation == Qt.Horizontal:
+            if role == Qt.DisplayRole:
+                return COLUMNS[section]
+            if role == Qt.ToolTipRole:
+                return COLUMN_TOOLTIPS.get(COLUMNS[section])
         return None
 
     def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
@@ -76,52 +81,32 @@ class OpportunityModel(QAbstractTableModel):
         l, v = o.listing, o.valuation
         col = COLUMNS[index.column()]
         if role == Qt.UserRole:  # sort key
-            return {
-                "Priority": LEVEL_RANK[o.level] * 1e12 - o.detected_at,
-                "Buy": l.price, "Reference": v.reference or 0, "Quick sale": v.quick or 0,
-                "Net profit": v.net_profit or 0, "ROI": v.roi or 0, "Confidence": v.confidence,
-                "Freshness": l.source_seen_at, "CH": l.channel or 0, "FM": l.fm_room or 0,
-            }.get(col, self.data(index, Qt.DisplayRole))
+            return {"Item": l.item_name.lower(), "Buy": l.price, "Market Value": v.reference or 0,
+                    "Quick Sale": v.quick or 0}[col]
         if role == Qt.DisplayRole:
-            if col == "Priority":
-                return o.level.value + (" (stale)" if o.stale else "")
             if col == "Item":
                 return l.item_name
-            if col == "Stats":
-                return stats_signature(l.stats).replace(",", "  ") or ("—" if (l.category or "").lower() != "equip" else "unknown")
             if col == "Buy":
                 return f"{l.price:,}"
-            if col == "Reference":
+            if col == "Market Value":
                 return f"{v.reference:,}" if v.reference else "n/a"
-            if col == "Quick sale":
+            if col == "Quick Sale":
                 return f"{v.quick:,}" if v.quick else "n/a"
-            if col == "Net profit":
-                return f"{v.net_profit:+,}" if v.net_profit is not None else "n/a"
-            if col == "ROI":
-                return f"{v.roi:.0%}" if v.roi is not None else "n/a"
-            if col == "Confidence":
-                return f"{v.confidence_label} ({v.confidence:.2f})"
-            if col == "Freshness":
-                return fmt_age(time.time() - l.source_seen_at) + " ago"
-            if col == "CH":
-                return str(l.channel) if l.channel is not None else "?"
-            if col == "FM":
-                return str(l.fm_room) if l.fm_room is not None else (l.map_name or "?")
-            if col == "Shop":
-                return l.seller
-            if col == "Source":
-                return l.source
         if role == Qt.ForegroundRole:
-            if col == "Priority":
-                return QBrush(QColor(LEVEL_COLORS.get(o.level.value, MUTED)))
-            if col == "Net profit" and v.net_profit is not None:
-                return QBrush(QColor("#3fb950" if v.net_profit > 0 else "#f85149"))
             if o.stale:
                 return QBrush(QColor(MUTED))
-        if role == Qt.TextAlignmentRole and col in ("Buy", "Reference", "Quick sale", "Net profit", "ROI", "CH", "FM"):
+            if col == "Item":                      # the subtle level indicator: coloured item name
+                return QBrush(QColor(LEVEL_COLORS.get(o.level.value, MUTED)))
+            if col == "Quick Sale" and (v.net_profit or 0) > 0:
+                return QBrush(QColor("#3fb950"))
+        if role == Qt.BackgroundRole and o.level == Level.JACKPOT and not o.stale:
+            return QBrush(QColor(LEVEL_COLORS["JACKPOT"] + "1a"))   # faint red tint behind JACKPOT rows
+        if role == Qt.TextAlignmentRole and col in ("Buy", "Market Value", "Quick Sale"):
             return int(Qt.AlignRight | Qt.AlignVCenter)
         if role == Qt.ToolTipRole:
-            return "\n".join(v.explanation + [f"risk: {r}" for r in v.risks] + o.reasons)
+            head = f"{o.level.value}{' (stale)' if o.stale else ''} · net {v.net_profit:+,} · {l.location} · {l.seller}" if v.net_profit is not None \
+                else f"{o.level.value} · {l.location} · {l.seller}"
+            return "\n".join([head] + v.explanation + [f"risk: {r}" for r in v.risks] + o.reasons)
         return None
 
 

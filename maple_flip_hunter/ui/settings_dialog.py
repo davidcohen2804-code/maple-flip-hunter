@@ -2,15 +2,27 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QByteArray, QRect, Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFormLayout,
                                QGridLayout, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton,
-                               QSlider, QSpinBox, QVBoxLayout, QWidget)
+                               QScrollArea, QSlider, QSpinBox, QVBoxLayout, QWidget)
 
 from ..config import Settings, SoundTier, validate_tiers
 from ..notifications.sounds import sound_labels
 
 NO_MAX = 100_000_000      # spin-box value that means "no upper bound"
+MAX_HEIGHT_FRACTION = 0.80   # initial height ≤ 80 % of the available screen height
+
+
+def fit_on_screen(wanted: QRect, screen: QRect, max_fraction: float = MAX_HEIGHT_FRACTION) -> QRect:
+    """Pure geometry rule (unit-tested for 1366×768 / 1920×1080 / scaled screens): shrink to the screen, cap the
+    height at `max_fraction` of the available height, and move the window fully inside the visible area."""
+    w = min(wanted.width(), screen.width())
+    h = min(wanted.height(), int(screen.height() * max_fraction))
+    x = min(max(wanted.x(), screen.left()), screen.right() - w + 1)
+    y = min(max(wanted.y(), screen.top()), screen.bottom() - h + 1)
+    return QRect(x, y, w, h)
 
 
 def _mesos(v: int, maximum: int = 50_000_000) -> QSpinBox:
@@ -66,10 +78,23 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.notifier = notifier
         self.setWindowTitle("Settings — Maple Flip Hunter")
-        self.setMinimumWidth(560)
+        self.setMinimumSize(560, 360)
+        self.setSizeGripEnabled(True)           # resizable + draggable like any normal window
         s = settings
-        root = QVBoxLayout(self)
-        root.setContentsMargins(20, 20, 20, 20)
+        self._settings_in = settings
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QScrollArea.NoFrame)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.verticalScrollBar().setSingleStep(24)      # smooth wheel steps
+        body = QWidget()
+        self.scroll.setWidget(body)
+        outer.addWidget(self.scroll, 1)
+        root = QVBoxLayout(body)
+        root.setContentsMargins(20, 20, 24, 20)
         root.setSpacing(14)
 
         g1 = QGroupBox("Profitability (applies to ALL items automatically)")
@@ -220,13 +245,44 @@ class SettingsDialog(QDialog):
         f4.addRow(note)
         root.addWidget(g4)
 
-        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        bb.accepted.connect(self.accept)
-        bb.rejected.connect(self.reject)
-        row = QHBoxLayout()
+        # button bar OUTSIDE the scroll area: always visible at the bottom
+        self.button_bar = QWidget()
+        self.button_bar.setObjectName("buttonBar")
+        self.button_bar.setStyleSheet("QWidget#buttonBar { border-top: 1px solid #2a3442; }")
+        row = QHBoxLayout(self.button_bar)
+        row.setContentsMargins(20, 12, 20, 12)
+        self.bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        self.bb.accepted.connect(self.accept)
+        self.bb.rejected.connect(self.reject)
         row.addStretch(1)
-        row.addWidget(bb)
-        root.addLayout(row)
+        row.addWidget(self.bb)
+        outer.addWidget(self.button_bar, 0)
+        self._restore_geometry()
+
+    # ------------------------------------------------------------ geometry
+    def _screen_rect(self) -> QRect:
+        scr = self.screen() or QGuiApplication.primaryScreen()
+        return scr.availableGeometry() if scr else QRect(0, 0, 1366, 768)
+
+    def _restore_geometry(self) -> None:
+        saved = self._settings_in.ui_settings_dialog_geometry
+        if saved:
+            try:
+                self.restoreGeometry(QByteArray.fromBase64(saved.encode("ascii")))
+            except Exception:  # noqa: BLE001
+                saved = ""
+        screen = self._screen_rect()
+        wanted = self.geometry() if saved else QRect(0, 0, 640, self.sizeHint().height() + 40)
+        if not saved:   # centre on the screen the first time
+            wanted.moveCenter(screen.center())
+        self.setGeometry(fit_on_screen(wanted, screen))
+
+    def saved_geometry(self) -> str:
+        return bytes(self.saveGeometry().toBase64()).decode("ascii")
+
+    def done(self, result: int) -> None:  # noqa: D401 - remember size/position on Save AND Cancel
+        self._settings_in.ui_settings_dialog_geometry = self.saved_geometry()
+        super().done(result)
 
     # ---------------------------------------------------------------- tiers
     def _add_tier_row(self, tier: SoundTier) -> None:
@@ -277,6 +333,7 @@ class SettingsDialog(QDialog):
     def result_settings(self, base: Settings) -> Settings:
         d = base.model_dump()
         d.update(
+            ui_settings_dialog_geometry=self.saved_geometry(),
             sound_tiers=[t.model_dump() for t in self.tiers()], alert_volume=self.volume.value() / 100,
             min_buy_price=self.min_buy.value(), max_buy_price=self.max_buy.value(), min_net_profit=self.min_profit.value(),
             quick_flips_only=self.cb_quick.isChecked(), quick_flip_min_net_profit=self.q_profit.value(),
