@@ -1,0 +1,58 @@
+name: windows-build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Unit tests (synthetic)
+        run: python -m pytest tests/unit -q --junitxml=unit-results.xml
+      - name: Live source tests (real market data, measured on this Windows runner)
+        id: live
+        continue-on-error: true
+        env:
+          MFH_LIVE: "1"
+          MFH_LIVE_SECONDS: "90"
+        run: python -m pytest tests/live -q -rA --junitxml=live-results.xml
+      - name: Build MapleFlipHunter.exe
+        run: python -m PyInstaller --noconfirm --clean build/windows/MapleFlipHunter.spec
+      - name: Smoke-run the EXE (headless, 60 s against live sources)
+        id: smoke
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $p = Start-Process -FilePath "dist\MapleFlipHunter\MapleFlipHunter.exe" -ArgumentList "--headless","--seconds","60","--out","exe_headless_result.json" -PassThru -Wait
+          "exe exit code: $($p.ExitCode)"
+          if (Test-Path exe_headless_result.json) { Get-Content exe_headless_result.json -TotalCount 60 } else { "NO RESULT FILE"; exit 1 }
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist\MapleFlipHunter\* -DestinationPath MapleFlipHunter-win64.zip
+          Get-Item MapleFlipHunter-win64.zip | Select-Object Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MapleFlipHunter-win64
+          path: MapleFlipHunter-win64.zip
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-and-measurement-results
+          path: |
+            unit-results.xml
+            live-results.xml
+            tests/live/last_live_measurements.json
+            exe_headless_result.json
+          if-no-files-found: ignore

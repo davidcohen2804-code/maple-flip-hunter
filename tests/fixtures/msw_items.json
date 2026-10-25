@@ -1,0 +1,7 @@
+{"at": 1792936226, "maintenance": {"started": 1792699906, "ended": 1792705167, "note": "patch"}, "last24h": {"seen": 281544, "sales": 64390},
+ "ever": {"shopVisits": 59983, "listingsRead": 738786, "listingsFound": 804046, "sales": 183365},
+ "items": [
+  {"name": "AP Reset Scroll", "typical": 74999, "range": [70000, 79749.25], "dayAgo": 74999, "samples": 142, "prices": 228, "lowest": 68000, "listed": 42, "sold": 142, "units": 142, "volume": 10554646, "seen24h": 170, "sales24h": 42, "seen": 1792935061},
+  {"name": "Adamantium Guards", "typical": 40000, "range": [37769, 45000], "dayAgo": 39999.5, "samples": 117, "prices": 137, "lowest": 35000, "listed": 9, "sold": 117, "units": 117, "volume": 4834292, "seen24h": 54, "sales24h": 36, "seen": 1792936013},
+  {"name": "Angel Halo", "typical": 185000, "range": [169999, 194999.75], "dayAgo": 180000, "samples": 398, "prices": 663, "lowest": 120000, "listed": 182, "sold": 398, "units": 398, "volume": 72027435, "seen24h": 537, "sales24h": 132, "seen": 1792935996}
+ ]}

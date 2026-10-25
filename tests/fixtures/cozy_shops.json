@@ -1,0 +1,4 @@
+{"rows": [
+ {"shop": "Nazelet", "seller": "Nazelet", "title": "Scrolls", "channel": 17, "fm_room": null, "map_name": "KerningCityConstructionSit", "scans": 5, "listings": 5, "sold": 0, "items": 4, "offers": 4, "first_at": 1792936381.198, "last_at": 1792936525.168, "cheap_share": 0, "vs_fm": 0.00002, "compared": 4, "top": [{"id": 124, "name": "Hat Accuracy Scroll: Greater"}]},
+ {"shop": "Zakul", "seller": "Zakul", "title": "THIEF EQUIP", "channel": 40, "fm_room": 2, "map_name": "Free Market", "scans": 490, "listings": 603, "sold": 44, "items": 51, "offers": 11, "first_at": 1792304611.241, "last_at": 1792936506.658, "cheap_share": 0.4545, "vs_fm": -0.0741, "compared": 11, "top": [{"id": 336, "name": "Diamond"}]}
+], "page": 1, "size": 3, "total": 24930, "pages": 8310}

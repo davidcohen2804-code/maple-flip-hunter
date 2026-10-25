@@ -1,0 +1,11 @@
+{"id": 98, "name": "Earring STR Scroll: Intermediate", "npc": 1, "fm": 89999, "fm_source": "cozy", "fm_basis": "sold", "meow": 92999, "fm_reports": 1283, "fm_at": 1792929475.275,
+ "info": {"type": "Use", "subtype": "Scroll", "levelReq": 0, "reqJob": null, "stats": {"grade": "Intermediate", "target": "Earring", "statType": "STR", "successRate": 60, "str": 2, "price": 1}, "iconKey": "2040301"},
+ "stats": {"count": 2437, "low": 9000, "p25": 80000, "median": 94999, "high": 988888, "last": 92000, "sold": 307, "last_sold": 69999, "sold_median": 89999},
+ "chart": [
+  {"at": 1792936482.002, "unit_price": 92000, "sold": false, "shop": "Nazelet", "shop_title": "Scrolls", "channel": 17, "fm_room": null, "map_name": "KerningCityConstructionSit", "map": "KerningCityConstructionSit"},
+  {"at": 1792936312.432, "unit_price": 70000, "sold": false, "shop": "Kahiel", "shop_title": "AAAAA", "channel": 10, "fm_room": null, "map_name": "Kerning City Construction Site", "map": "Kerning City Construction Site"},
+  {"at": 1792935625.643, "unit_price": 68888, "sold": false, "shop": "Deece", "shop_title": "Scrolls and NX", "channel": 40, "fm_room": 3, "map_name": "Free Market <3>", "map": "FM 3"},
+  {"at": 1792935301.978, "unit_price": 74999, "sold": false, "shop": "YanLuo", "shop_title": "Anyhow", "channel": 22, "fm_room": 10, "map_name": "Free Market <10>", "map": "FM 10"},
+  {"at": 1792935213.723, "unit_price": 69999, "sold": true, "shop": "ShibaDogg420", "shop_title": "good things", "channel": 22, "fm_room": 8, "map_name": "Free Market <8>", "map": "FM 8"}
+ ],
+ "maps": [{"count": 519, "map": "FM 1"}, {"count": 258, "map": "FM 2"}], "stat_ranges": {}}

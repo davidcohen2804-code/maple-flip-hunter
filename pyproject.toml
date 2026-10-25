@@ -1,0 +1,25 @@
+[project]
+name = "maple-flip-hunter"
+version = "0.1.0"
+description = "Real-time Free Market noob-trade detector for MapleStory Classic World (Windows desktop)"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6-Essentials>=6.7",
+    "PySide6-Addons>=6.7",
+    "httpx>=0.27",
+    "pydantic>=2.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "pyinstaller>=6.6", "psutil>=5.9"]
+
+[project.scripts]
+maple-flip-hunter = "maple_flip_hunter.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["live: hits real market sources (set MFH_LIVE=1)"]
+
+[tool.setuptools.packages.find]
+include = ["maple_flip_hunter*"]

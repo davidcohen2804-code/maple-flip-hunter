@@ -1,0 +1,13 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+build/MapleFlipHunter/
+dist/
+*.spec.bak
+*.sqlite3
+*.log
+headless_result.json
+exe_headless_result.json
+*.zip
+.pytest_cache/
