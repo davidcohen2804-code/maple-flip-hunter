@@ -42,5 +42,7 @@ New unit tests: stop interrupts a 60 s poll in < 5 s; stop during an in-flight H
 answers) returns in < 5 s with the client closed, thread finished, and the next start uses a fresh client.
 
 ## Verification status
-Marked verified **only** when the CI run that includes the new Windows restart test passes — see the run linked in
-docs/TEST_RESULTS.md.
+**VERIFIED on Windows CI run #14** (https://github.com/davidcohen2804-code/maple-flip-hunter/actions/runs/40226469846):
+unit 55/55, Windows runtime incl. `test_start_stop_settings_start_recovers_live_with_real_sources` passed (start → stop with all
+clients closed → settings change → start → maplestory.watch ONLINE, scanner LIVE/DEGRADED, no 'closed' errors; cozy AUTH REQUIRED, not bypassed),
+live tests passed, packaged EXE 90 s headless run passed. Audio playback still NOT verified on the runner (no device) — verified by the user at home (Test Alarm).
