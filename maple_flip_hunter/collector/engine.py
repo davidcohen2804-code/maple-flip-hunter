@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from ..adapters import CozyAdapter, MapleStoryWatchAdapter
+from ..adapters import ClubFMAdapter, CozyAdapter, MapleStoryWatchAdapter
 from ..adapters.base import BaseAdapter
 from ..config import Settings
 from ..db import Database
@@ -50,11 +50,16 @@ class MarketEngine:
         out: list[BaseAdapter] = []
         s = self.settings
         if s.source_cozy_enabled:
-            out.append(CozyAdapter(interval_s=s.source_cozy_interval_s, max_shops_per_cycle=s.source_cozy_max_shops_per_cycle))
+            out.append(CozyAdapter(interval_s=s.source_cozy_interval_s, max_shops_per_cycle=s.source_cozy_max_shops_per_cycle,
+                                   token=s.source_cozy_token))
         if s.source_msw_enabled:
             out.append(MapleStoryWatchAdapter(interval_s=s.source_msw_interval_s,
                                               max_item_lookups=s.source_msw_max_item_lookups_per_cycle,
                                               candidate_discount=s.source_msw_candidate_discount))
+        if s.source_clubfm_enabled:
+            out.append(ClubFMAdapter(interval_s=s.source_clubfm_interval_s,
+                                     permission_granted=s.source_clubfm_permission_granted,
+                                     token=s.source_clubfm_token))
         return out
 
     def on(self, event: str, cb: Callback) -> None:
@@ -312,6 +317,9 @@ class MarketEngine:
                 a.interval_s = settings.source_msw_interval_s
                 a.max_item_lookups = settings.source_msw_max_item_lookups_per_cycle
                 a.candidate_discount = settings.source_msw_candidate_discount
+            elif isinstance(a, ClubFMAdapter):
+                a.interval_s = settings.source_clubfm_interval_s
+                a.permission_granted = settings.source_clubfm_permission_granted
 
 
 def format_alert(opp: Opportunity) -> tuple[str, str]:

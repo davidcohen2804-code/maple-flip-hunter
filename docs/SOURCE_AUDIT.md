@@ -5,6 +5,14 @@ and from the collector code. Every "measured" number below was observed, not ass
 Numbers marked *(CI)* are refreshed by the Windows CI job (`tests/live`) and stored in
 `tests/live/last_live_measurements.json`.
 
+## Update 2026-10-25 evening — access status after the home test
+* **cozy.markets returns HTTP 403 to this application also from the user's home PC** (the same URLs work in a browser):
+  Cloudflare bot protection on non-browser clients. Status in the app: `AUTH REQUIRED`. **Not bypassed.** A permission /
+  token request is drafted in docs/ACCESS_REQUESTS.md; the adapter accepts a bearer token the moment one is issued.
+* **maplestory.watch works from home and from Windows CI** (secondary, 2–5 min behind).
+* New sites investigated (details below): **Club FM** (adapter built, disabled until written permission), **Kerning
+  Exchange** (smega feed, no room/channel), **EvilEyeFM** (no coverage), **meso.watch** (automated access disallowed).
+
 ## Summary table
 
 | Site | Verified access | API | Listing fields | Refresh / freshness | Rate limits | Coverage | Restrictions | Status |
@@ -14,6 +22,10 @@ Numbers marked *(CI)* are refreshed by the Windows CI job (`tests/live`) and sto
 | **freemarketclassic.com** | HTTP 200 (HTML) | None found | shop rows: item, posted price, typical price, seller, channel, FM room, "last seen" | Rows showed "48 min – 8 h" ago at audit time (slower than cozy) | n/a | 61,802 recorded prices; also live smega feed | **Terms §2 forbid "bots, scripts or programs that automate … this website"** | **UNSUPPORTED (ToS)** — their own *FM Sync* Windows app offers alerts |
 | **maplemarket.fyi** | HTTP 200 (HTML), data behind paid login | None public | lowest / median / sold per item, shop + channel + room (paid) | unknown (paid) | n/a | 1,122 items on sale, 63 k listings, 6.5 k shops read / 24 h (home page KPIs) | **Paid subscription; ToS §2: don't "republish or scrape the site's data"** | **UNSUPPORTED (paid + ToS)** |
 | **maplefm.gg (Club FM)** | HTTP 200 (static HTML, data files on GitHub Pages) | Data files exist but **ToS §2 requires written permission** for automated collection | sales + asks, seller, channel, room | "updates itself every minute" (per site) | n/a | community FM Watcher + Twitch stream reader | ToS: "No bots, scrapers … without asking us first. … we usually say yes" | **UNSUPPORTED pending permission** — a good future source; ask via their Feedback button / Discord |
+| **maplefm.gg (Club FM)** — detail | HTTP 200 JSON `https://api.maplefm.gg/data/snap` (public, `max-age=30`); `/data/live?after=` gated (401/403) | columnar snapshot v2: 56,405 rows, cols `i item, s seller, p price, q qty, u unit, r room ("FM2"), c channel, t seconds-before-T, who scanner, st up/old, sold, chat, xj job`; `D.active` / `D.sales` index lists | measured: newest row (`T`) **326 s** older than the snapshot `at`; live feed "updates every minute" (gated) | self-limit 1 req/min | 1,366 items, 1,282 "spot" rows, scanner ranks | **Terms §2: permission required** → adapter `adapters/clubfm.py` built and tested, **disabled** until permission is recorded in Settings | PENDING PERMISSION |
+| **kerning.gg (Kerning Exchange)** | HTTP 200 HTML; no JSON found | none documented | smega shouts: item, price/offer, seller, some stats text, "just now / 1m ago" timestamps; item pages with 7-day medians | seconds (chat feed) | n/a | all smegas | no terms page; Discord only | NOT INTEGRATED (no channel / FM room → cannot direct to a shop; request drafted) |
+| **evileyefm.com** | HTTP 200; page reads a third-party database (Supabase) with a key embedded in its JS | not an authorized API | listings with seller, channel, free_market room, equip stats, captured_at | unknown | n/a | **12 rows in the last 7 days** (Rooms page) | none published | NOT INTEGRATED (no authorized access, no coverage) |
+| **meso.watch** | fetch refused (robots disallow) | unknown | unknown | unknown | n/a | unknown | disallows automated access | UNSUPPORTED |
 | **beta.meso.watch** | Fetch refused: site disallows automated access | unknown | unknown | unknown | n/a | unknown | robots disallow | **UNSUPPORTED (blocked)** |
 | meowdb.com (extra) | HTTP 200 (HTML) | none seen | player-reported 14-day median prices | manual reports | n/a | n/a | not investigated for ToS; cozy already exposes its figure as `meow` | Reference only (used indirectly via cozy `meow` field) |
 

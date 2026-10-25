@@ -35,8 +35,10 @@ class CozyAdapter(BaseAdapter):
     burst = 6
     PAGE = 100
 
-    def __init__(self, *args: Any, max_shops_per_cycle: int = 25, **kwargs: Any):
+    def __init__(self, *args: Any, max_shops_per_cycle: int = 25, token: str = "", **kwargs: Any):
         super().__init__(*args, **kwargs)
+        if token.strip():  # only if cozy.markets issues one; never used to evade the bot check
+            self.client.headers["Authorization"] = f"Bearer {token.strip()}"
         self.max_shops_per_cycle = max_shops_per_cycle
         self._shops_watermark: float = time.time() - 300  # start with the last 5 minutes
         self._shop_seen_at: dict[str, float] = {}

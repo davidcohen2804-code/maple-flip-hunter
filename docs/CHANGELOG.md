@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 — 2026-10-25 (data-speed round)
+* Research: cozy.markets blocks the app (403) also from home — permission request drafted; Club FM snapshot/live formats documented; Kerning Exchange, EvilEyeFM, meso.watch audited (docs/SOURCE_AUDIT.md, docs/ACCESS_REQUESTS.md).
+* New Club FM adapter (columnar snapshot decoder, sales + active asks, evidence) — **disabled until written permission is recorded** in Settings; optional bearer token for the live feed.
+* cozy.markets adapter accepts an operator-issued bearer token (Settings). No bot-protection circumvention anywhere.
+* 50 unit tests.
+
 ## 0.3.1 — 2026-10-25 (Windows CI round)
 * Fixes found by the Windows runner: coarse-clock time budget, headless state capture, chunked maplestory.watch draining (30 s chunks, 2 s follow-up), UTF-8 report.
 * CI gates: cozy 403 recorded as BLOCKED (never bypassed), scanner must stay LIVE/DEGRADED with a blocked source, no JACKPOT on stale rows; audio tests skip with an explicit notice when no device exists.

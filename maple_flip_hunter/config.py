@@ -51,6 +51,16 @@ class Settings(BaseModel):
     source_msw_interval_s: float = Field(180.0, ge=60.0)
     source_msw_max_item_lookups_per_cycle: int = 40
     source_msw_candidate_discount: float = 0.20
+    # Club FM (maplefm.gg): their Terms of Use require written permission for automated collection.
+    # Set permission_granted ONLY after Club FM has agreed; paste a token if they issue one for /data/live.
+    source_clubfm_enabled: bool = True
+    source_clubfm_permission_granted: bool = False
+    source_clubfm_token: str = ""
+    source_clubfm_interval_s: float = Field(60.0, ge=30.0)
+    # cozy.markets: the public JSON answers browsers but returns HTTP 403 to this app (Cloudflare bot
+    # protection), both from datacenters and from a home PC. The adapter stays enabled so a future
+    # whitelisting / token simply works; nothing circumvents the block.
+    source_cozy_token: str = ""
 
     # --- retention ------------------------------------------------------
     retention_listings_days: int = 7

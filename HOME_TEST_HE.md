@@ -23,3 +23,8 @@
    * `audio playback: VERIFIED` → השמע נבדק באמת אצלך.
    * בחלק "Packaged EXE headless run": `source→alert` = ההתפלגות (מינימום/חציון/p95) של השניות בין חותמת הזמן של המקור להתראה.
 4. שלח לי את תיקיית `reports\` ואעדכן את המסמכים עם המספרים האמיתיים.
+
+## ד. אחרי שקיבלת אישור ממפעיל אתר
+* **cozy.markets** — אם נתנו טוקן: הגדרות → "cozy.markets token" → הדבק → Stop → Start. אם רק אישרו את ה-User-Agent, פשוט הפעל מחדש; המצב צריך להשתנות מ-AUTH REQUIRED ל-ONLINE.
+* **Club FM** — רק אחרי אישור בכתב: הגדרות → סמן "Club FM — needs their written permission" (+ טוקן אם נתנו) → Stop → Start.
+הנוסחים לשליחה (באנגלית) נמצאים ב-`docs/ACCESS_REQUESTS.md`.
