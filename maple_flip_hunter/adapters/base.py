@@ -138,6 +138,10 @@ class BaseAdapter:
         elif self.health.status != SourceStatus.AUTH_REQUIRED:
             self._set_status(SourceStatus.UNAVAILABLE, str(exc)[:120])
 
+    def next_delay(self) -> float:
+        """Seconds to wait before the next poll (adapters may shorten it while they have a backlog)."""
+        return self.interval_s
+
     def stale_after_s(self) -> float:
         return max(600.0, self.interval_s * 6)
 
@@ -164,7 +168,7 @@ class BaseAdapter:
                 self.mark_failure(exc)
                 log.warning("%s poll failed: %s", self.name, exc)
             elapsed = time.monotonic() - t0
-            await self._sleep(max(1.0, self.interval_s - elapsed))
+            await self._sleep(max(1.0, self.next_delay() - elapsed))
 
     async def _sleep(self, seconds: float) -> None:
         try:

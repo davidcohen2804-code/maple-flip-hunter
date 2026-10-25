@@ -30,7 +30,7 @@ class MapleStoryWatchAdapter(BaseAdapter):
     rate = 1.5
     burst = 3
 
-    def __init__(self, *args: Any, max_item_lookups: int = 200, candidate_discount: float = 0.20, **kwargs: Any):
+    def __init__(self, *args: Any, max_item_lookups: int = 40, candidate_discount: float = 0.20, **kwargs: Any):
         super().__init__(*args, **kwargs)
         self.max_item_lookups = max_item_lookups
         self.candidate_discount = candidate_discount
@@ -40,6 +40,7 @@ class MapleStoryWatchAdapter(BaseAdapter):
         self._seen_keys: dict[str, float] = {}
         self._detail_cache: dict[str, tuple[float, Any]] = {}
         self.backlog = 0
+        self._index_fetched_at = 0.0
 
     @staticmethod
     def _as_int(v: Any) -> Optional[int]:
@@ -83,9 +84,14 @@ class MapleStoryWatchAdapter(BaseAdapter):
         self.index_at = float((data or {}).get("at") or time.time())
         return len(self.index)
 
+    def next_delay(self) -> float:
+        return 2.0 if self.backlog else self.interval_s   # keep draining candidates in short chunks
+
     async def poll(self) -> list[Listing]:
         now = time.time()
-        await self.refresh_index()
+        if now - self._index_fetched_at >= 60:          # the index is CDN-cached ~200 s; no point refetching sooner
+            await self.refresh_index()
+            self._index_fetched_at = time.time()
         newest = self.index_at
         candidates = []
         for name, it in self.index.items():
@@ -100,7 +106,7 @@ class MapleStoryWatchAdapter(BaseAdapter):
         self.backlog = max(0, len(candidates) - self.max_item_lookups)   # unfetched candidates stay candidates (provisional)
         out: list[Listing] = []
         t0 = time.monotonic()
-        budget = max(30.0, self.interval_s * 0.8)
+        budget = 30.0                               # short chunks: rows reach the engine every ~30 s
         fetched = 0
         for i, (seen, name) in enumerate(candidates):
             if i >= self.max_item_lookups or time.monotonic() - t0 >= budget:
