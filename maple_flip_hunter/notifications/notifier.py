@@ -28,6 +28,9 @@ class Notifier:
         self._backend = "silent"
         self._lock = threading.Lock()
         self.last_sound: Optional[str] = None
+        self.last_play_at: Optional[float] = None      # wall clock of the last play() that reached a backend
+        self.sound_latency_ms: list[float] = []         # listing first seen locally -> sound started
+        self.muted_until = 0.0
         if enable_audio:
             self._init_backend()
 
@@ -57,10 +60,18 @@ class Notifier:
     def play(self, level: str, volume: Optional[float] = None) -> None:
         """Play a sound by id ("bell", "melody", "jackpot", ...) or by legacy level name ("JACKPOT", ...)."""
         path = self.sounds.get(level) or self.sounds.get("GOOD FLIP")
-        if not path or not self.enable_audio:
+        if not path:
             return
         if volume is not None:
             self.set_volume(volume)
+        import time as _t
+
+        if _t.time() < self.muted_until:
+            return
+        self.last_play_at = _t.time()      # the moment the sound is handed to the backend (or logged when audio is off)
+        if not self.enable_audio:
+            log.info("[audio disabled] %s", level)
+            return
         if self._backend == "qt":
             self._play_qt(level, path)
         elif self._backend == "winsound":
@@ -92,6 +103,27 @@ class Notifier:
             self._backend = "winsound" if sys.platform == "win32" else "silent"
             self.play(level)
 
+    def stop_all(self) -> None:
+        """Stop any sound that is still playing (Mute button)."""
+        for eff in self._effects.values():
+            try:
+                eff.stop()  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                pass
+        if self._backend == "winsound" and sys.platform == "win32":
+            try:
+                import winsound
+
+                winsound.PlaySound(None, winsound.SND_PURGE)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def mute_for(self, seconds: float) -> None:
+        import time as _t
+
+        self.stop_all()
+        self.muted_until = _t.time() + seconds
+
     # --------------------------------------------------------------- alert
     def alert(self, opp: Opportunity, level: str, title: str, body: str, sound: Optional[str] = "__level__") -> None:
         """`sound` = sound id chosen by the profit tier; None = silent alert (toast only);
@@ -105,6 +137,9 @@ class Notifier:
         self.last_sound = level if sound == "__level__" else sound
         if self.last_sound is not None:
             self.play(self.last_sound)
+            if self.last_play_at is not None:
+                self.sound_latency_ms.append((self.last_play_at - opp.listing.local_first_seen_at) * 1000)
+                del self.sound_latency_ms[:-500]
         if self.toast_callback is not None:
             try:
                 self.toast_callback(opp, level, title, body)

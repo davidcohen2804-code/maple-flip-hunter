@@ -182,3 +182,40 @@ def test_start_stop_settings_start_recovers_live_with_real_sources():
     assert msw.health.status.value in ("ONLINE", "STALE"), statuses
     assert state in ("LIVE", "DEGRADED"), (state, statuses)
     assert not any(a.client.is_closed for a in eng.adapters if a.health.status.value == "ONLINE") or True
+
+
+def test_alert_sound_fires_automatically_from_scanner_path(qapp, tmp_path):
+    """Not Test alarm: a JACKPOT ingested by the engine must reach the real audio backend (Qt/winsound)
+    and the ingest->sound latency must be measured. When the runner has no audio device the backend call
+    still executes (QSoundEffect/winsound do not raise), which is what we can verify here."""
+    import asyncio
+
+    from maple_flip_hunter.collector.engine import MarketEngine
+    from maple_flip_hunter.config import Settings
+    from maple_flip_hunter.db import Database
+    from maple_flip_hunter.models import Level
+    from maple_flip_hunter.notifications import Notifier, ensure_sounds
+    from maple_flip_hunter.ui.alert_popup import AlertPopup
+    from PySide6.QtCore import Qt
+    from tests.conftest import make_evidence, make_listing
+
+    n = Notifier(volume=0.5, enable_audio=True, sounds=ensure_sounds(tmp_path))
+    assert n.backend in ("qt", "winsound")
+    s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000)
+    eng = MarketEngine(s, Database(":memory:"), n, adapters=[])
+
+    async def evidence(lst):
+        r = lst.source_ref_price
+        return make_evidence(lst, sold_median=r, sold_count=40, sales24=6, asks=(int(r * 1.03), int(r * 1.05), int(r * 1.1)))
+    eng.gather_evidence = evidence  # type: ignore[method-assign]
+    opps = asyncio.new_event_loop().run_until_complete(eng.ingest([make_listing(price=8_000, ref=75_000, age_s=5)]))
+    assert opps[0].level == Level.JACKPOT and n.last_sound == "jackpot" and n.last_play_at is not None
+    assert len(n.sound_latency_ms) == 1 and n.sound_latency_ms[0] < 1_000, n.sound_latency_ms
+    print(f"AUDIO-AUTO: backend={n.backend} ingest->sound {n.sound_latency_ms[0]:.1f} ms (audio outputs: {_audio_outputs()})")
+    pop = AlertPopup(opps[0], "JACKPOT", latency_ms=n.sound_latency_ms[0])
+    pop.show_stacked()
+    for _ in range(20):
+        qapp.processEvents()
+        time.sleep(0.02)
+    assert pop.isVisible() and pop.windowFlags() & Qt.WindowStaysOnTopHint
+    pop.close()

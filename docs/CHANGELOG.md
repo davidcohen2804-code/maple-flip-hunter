@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.1 — 2026-10-25 (always-on-top alert card, ingest→sound latency)
+* **Alert card above other windows** for every JACKPOT / GOOD FLIP alert that passed all filters: item, buy price,
+  *estimated* net profit (labelled "not guaranteed", with the quick-sale price it assumes), exact location
+  (CH · FM · shop), confidence, source age and the measured alert latency. Buttons: **Copy location** (one click →
+  clipboard), **Mute** (stops the sound and silences alerts for 60 s), **OK** (the card stays until pressed). Cards
+  stack top-right and never take keyboard focus from the game. Windows limit: a game in *exclusive full-screen*
+  mode hides all other windows — the sound and tray toast still fire; windowed/borderless games show the card.
+* **Ingest→sound latency** measured per alert (listing first seen locally → sound handed to the audio backend),
+  shown in the status bar next to the source→alert latency.
+* Tests: unit (sound fires from the scanner path, not only Test alarm; stale and unverified rows stay silent; card
+  contents, copy, mute, stacking, no auto-hide) + Windows runtime (real Qt/winsound backend reached automatically
+  from an engine ingest, latency < 1 s, card is top-most). Filters unchanged.
+
+
 ## 0.6.0 — 2026-10-25 (profit-band sounds, Club FM live feed)
 * **Sound alerts by net profit.** Settings → "Sound alerts by NET PROFIT": editable bands, each with its own melodic
   sound, enable/disable, ▶ Preview, volume slider, "+ Add band". Defaults: 10,000–19,999 gentle bell; 20,000–49,999

@@ -18,6 +18,7 @@ from ..collector.normalize import stats_signature
 from ..config import Settings
 from ..models import Level, Opportunity, SourceHealth
 from .bridge import EngineBridge
+from .alert_popup import AlertPopup
 from .settings_dialog import SettingsDialog
 from .startup import set_run_on_startup
 from .table_model import OpportunityFilter, OpportunityModel, fmt_age
@@ -351,6 +352,10 @@ class MainWindow(QMainWindow):
     def on_alert(self, opp: Opportunity, level: str, title: str, body: str) -> None:
         self.model.upsert(opp)
         l = opp.listing
+        # always-on-top card: stays until OK; Mute stops the sound now and silences alerts for 60 s
+        lat = (self.notifier.last_play_at - l.local_first_seen_at) * 1000 if self.notifier.last_play_at else None
+        self.popup = AlertPopup(opp, level, on_mute=lambda: self.notifier.mute_for(60), latency_ms=lat)
+        self.popup.show_stacked()
         if level == "JACKPOT":
             self.banner.setText(f"{title}<br>{html.escape(l.item_name)} — BUY {l.price:,} · QUICK SELL "
                                 f"{opp.valuation.quick or 0:,} · NET {opp.valuation.net_profit or 0:,}<br>"
@@ -395,7 +400,9 @@ class MainWindow(QMainWindow):
         self.stat_labels["new"].setText(f"{e.metrics.listings_new:,}")
         m = e.metrics.snapshot()
         s2a = m.get("source_to_alert_avg_s")
-        self.stat_labels["latency"].setText(f"{s2a:.1f} s (n={e.metrics.alerts})" if s2a is not None else "no alerts yet")
+        snd = self.notifier.sound_latency_ms
+        snd_txt = f" · ingest→sound {sum(snd[-50:]) / len(snd[-50:]):.0f} ms" if snd else ""
+        self.stat_labels["latency"].setText(f"{s2a:.1f} s (n={e.metrics.alerts}){snd_txt}" if s2a is not None else "no alerts yet")
         am = m.get("analysis_ms_avg")
         self.stat_labels["analysis"].setText(f"{am:.0f} ms" if am is not None else "—")
         self.stat_labels["opps"].setText(f"{sum(1 for o in self.model.rows if o.level != Level.NONE):,}")
