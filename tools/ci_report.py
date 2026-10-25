@@ -76,7 +76,14 @@ def main() -> None:
                 f"* coverage: {d.get('coverage')}",
                 "", "Opportunities seen (first 10):", "", "```json", json.dumps(d.get("opportunities", [])[:10], indent=2), "```",
                 "", "Alerts fired:", "", "```json", json.dumps(d.get("alerts", [])[:10], indent=2), "```"]
-    print("\n".join(out))
+    text = "\n".join(out)
+    if len(sys.argv) > 2:                      # ci_report.py <reports dir> <output file>
+        Path(sys.argv[2]).write_text(text, encoding="utf-8")
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows consoles default to cp1252
+    except Exception:  # noqa: BLE001
+        pass
+    print(text)
 
 
 if __name__ == "__main__":

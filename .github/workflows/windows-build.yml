@@ -71,7 +71,7 @@ jobs:
       - name: Write verification report and package the home-test build
         shell: pwsh
         run: |
-          python tools/ci_report.py reports > reports\VERIFICATION_REPORT.md
+          python tools/ci_report.py reports reports\VERIFICATION_REPORT.md
           Copy-Item reports\VERIFICATION_REPORT.md dist\MapleFlipHunter\VERIFICATION_REPORT.md
           Copy-Item README_HE.md dist\MapleFlipHunter\README_HE.md
           Compress-Archive -Force -Path dist\MapleFlipHunter\* -DestinationPath MapleFlipHunter-win64.zip

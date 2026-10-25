@@ -19,7 +19,7 @@ python -m pytest tests\live -q -rA --junitxml=reports\live-results.xml
 echo [4/4] headless engine run (120 s)
 python -m maple_flip_hunter.headless --seconds 120 --out reports\exe_headless_result.json >nul
 python tools\check_headless_result.py reports\exe_headless_result.json
-python tools\ci_report.py reports > reports\VERIFICATION_REPORT.md
+python tools\ci_report.py reports reports\VERIFICATION_REPORT.md
 echo.
 echo Done. Report: reports\VERIFICATION_REPORT.md
 exit /b 0
