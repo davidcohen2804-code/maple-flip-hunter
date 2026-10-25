@@ -37,16 +37,20 @@ jobs:
           if-no-files-found: ignore
 
       # ---- gates: any failure below fails the job and no VERIFIED artifact is produced ----
-      - name: Install a virtual audio output device (GitHub runners have no sound card)
+      - name: Try to install a virtual audio output device (GitHub runners have no sound card)
+        id: vaudio
+        timeout-minutes: 6
+        continue-on-error: true
         shell: pwsh
         run: |
           Invoke-WebRequest https://github.com/duncanthrax/scream/releases/download/4.0/Scream4.0.zip -OutFile Scream4.0.zip
           Expand-Archive -Path Scream4.0.zip -DestinationPath Scream
-          Import-Certificate -FilePath Scream\Install\driver\x64\Scream.cat -CertStoreLocation Cert:\LocalMachine\TrustedPublisher
-          Scream\Install\helpers\devcon-x64.exe install Scream\Install\driver\x64\Scream.inf *Scream
-          net start audiosrv
+          Import-Certificate -FilePath Scream\Install\driver\x64\Scream.cat -CertStoreLocation Cert:\LocalMachine\TrustedPublisher | Out-Null
+          $p = Start-Process -FilePath "Scream\Install\helpers\devcon-x64.exe" -ArgumentList "install","Scream\Install\driver\x64\Scream.inf","*Scream" -PassThru -NoNewWindow
+          if (-not $p.WaitForExit(120000)) { $p.Kill(); "devcon timed out" }
+          Start-Service -Name audiosrv -ErrorAction SilentlyContinue
           python -c "from PySide6.QtMultimedia import QMediaDevices; print('audio outputs:', [d.description() for d in QMediaDevices.audioOutputs()])"
-      - name: Windows runtime checks (audio, tray notification, window, startup key)
+      - name: Windows runtime checks (audio when a device exists, tray notification, window, startup key)
         run: python -m pytest tests/windows -q -rA --junitxml=reports/windows-results.xml
 
       - name: Live source tests (real cozy.markets + maplestory.watch, measured here)

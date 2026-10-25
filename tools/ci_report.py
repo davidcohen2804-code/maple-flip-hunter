@@ -32,6 +32,15 @@ def main() -> None:
            "## Test suites", "", "| file | tests | failed | skipped |", "|---|---|---|---|"]
     for name in ("unit-results.xml", "windows-results.xml", "live-results.xml"):
         out.append(junit_summary(rep / name))
+    wx = rep / "windows-results.xml"
+    if wx.exists():
+        txt = wx.read_text(encoding="utf-8", errors="ignore")
+        if "NO AUDIO OUTPUT DEVICE" in txt:
+            out += ["", "> **Audio playback was NOT verified on this machine** (no audio output device; the audio tests were "
+                        "skipped). Tray notifications, window/banner and startup registration were verified. Run "
+                        "`run_live_check.bat` on a PC with speakers to verify audio.", ""]
+        elif "test_winsound_plays_generated_alarm" in txt and 'failures="0"' in txt:
+            out += ["", "> Audio playback verified on this machine (winsound + Qt Multimedia).", ""]
     live = Path("tests/live/last_live_measurements.json")
     if live.exists():
         d = json.loads(live.read_text())
