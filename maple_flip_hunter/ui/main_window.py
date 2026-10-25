@@ -92,16 +92,15 @@ class MainWindow(QMainWindow):
         root.setSpacing(12)
 
         # header
-        header = QHBoxLayout()
+        header_host = QWidget()
+        header = FlowLayout(header_host, h_spacing=10)        # buttons wrap under the title on narrow windows
         title = QLabel("MAPLE FLIP HUNTER")
         title.setObjectName("title")
-        title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # decorative: may shrink on small screens
-        title.setMinimumWidth(140)
+        title.setMinimumWidth(0)
         header.addWidget(title)
         self.state_pill = QLabel("OFFLINE")
         self.state_pill.setObjectName("pill")
         header.addWidget(self.state_pill)
-        header.addStretch(1)
         self.btn_start = QPushButton("▶  Start scanner")
         self.btn_start.setObjectName("primary")
         self.btn_start.clicked.connect(self.toggle_scanner)
@@ -111,7 +110,7 @@ class MainWindow(QMainWindow):
         self.btn_settings.clicked.connect(self.open_settings)
         for b in (self.btn_test, self.btn_settings, self.btn_start):
             header.addWidget(b)
-        root.addLayout(header)
+        root.addWidget(header_host)
 
         # stats strip
         strip = Panel()
@@ -130,7 +129,7 @@ class MainWindow(QMainWindow):
             v.setObjectName("statValue")
             v.setWordWrap(True)
             v.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # long texts never force the window wider
-            v.setMinimumWidth(60)
+            v.setMinimumWidth(40)
             k.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
             g.setColumnStretch(i, 1)
             g.addWidget(k, 0, i)
