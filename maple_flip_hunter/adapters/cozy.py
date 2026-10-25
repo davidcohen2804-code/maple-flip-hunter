@@ -42,6 +42,7 @@ class CozyAdapter(BaseAdapter):
         self._shop_seen_at: dict[str, float] = {}
         self._pending: dict[str, dict[str, Any]] = {}
         self.backlog = 0
+        self._resume_page: Optional[int] = None
         self._deals_watermark: float = time.time() - 300
         self._seen_keys: dict[str, float] = {}
         self._catalog: dict[int, dict[str, Any]] = {}
@@ -98,20 +99,19 @@ class CozyAdapter(BaseAdapter):
         )
 
     # ------------------------------------------------------------- polling
-    MAX_SHOP_PAGES = 5      # 500 shops per cycle is far above the observed ~360 shop updates / hour
-    MAX_DEAL_PAGES = 5
+    MAX_SHOP_PAGES = 200    # safety valve only (20,000 shops/cycle); if ever hit, the watermark is NOT advanced
+    MAX_DEAL_PAGES = 50     # 5,000 under-reference rows per cycle; same rule
+    MAX_LISTING_PAGES = 50  # 5,000 rows per shop
 
-    async def _discover_changed_shops(self) -> tuple[int, float]:
-        """Walk /api/shops (newest scan first) until we reach shops we have already processed.
-        Every changed shop goes into the persistent pending queue - nothing is dropped when more
-        shops changed than one cycle can fetch. Returns (rows seen, newest last_at)."""
-        seen_rows, newest, page = 0, 0.0, 1
-        while page <= self.MAX_SHOP_PAGES:
+    async def _walk_shop_pages(self, first_page: int, budget: list[int]) -> tuple[bool, float, int]:
+        """Walk /api/shops from `first_page` while pages are fully unseen. Returns (completed, newest, next_page)."""
+        newest, page = 0.0, first_page
+        while budget[0] > 0:
+            budget[0] -= 1
             data = await self.fetch_json("/api/shops", {"page": page, "size": self.PAGE, "sort": "last_at", "dir": "desc"})
             rows = (data or {}).get("rows") or []
             if not rows:
-                break
-            seen_rows += len(rows)
+                return True, newest, page
             reached_known = False
             for s in rows:
                 shop = s.get("shop") or s.get("seller")
@@ -131,23 +131,69 @@ class CozyAdapter(BaseAdapter):
                                            "fm_room": s.get("fm_room"), "map_name": s.get("map_name"),
                                            "fails": (prev or {}).get("fails", 0)}
             oldest_on_page = min(float(s.get("last_at") or 0) for s in rows)
-            # keep paginating only while the whole page is newer than our watermark (all rows unseen)
-            if reached_known or oldest_on_page <= self._shops_watermark or page >= int((data or {}).get("pages") or 1):
-                break
+            # in resume mode known shops must not stop us: keep going down to the watermark
+            if (reached_known and first_page == 1 and self._resume_page is None) or oldest_on_page <= self._shops_watermark \
+                    or page >= int((data or {}).get("pages") or 1):
+                return True, newest, page + 1
             page += 1
-        if newest:
-            self._shops_watermark = max(self._shops_watermark, newest)
-        return seen_rows, newest
+        return False, newest, page
+
+    async def _discover_changed_shops(self) -> tuple[int, float]:
+        """Queue every changed shop. The walk goes newest-first until it reaches shops already processed.
+        If the per-cycle page valve stops it, the watermark is NOT advanced and the next cycle resumes the
+        walk from the page where it stopped (one page of overlap), after a quick look at page 1 for new scans.
+        Nothing is dropped however many shops changed."""
+        budget = [self.MAX_SHOP_PAGES]
+        if self._resume_page is None:
+            completed, newest, nxt = await self._walk_shop_pages(1, budget)
+        else:
+            _, newest1, _ = await self._walk_shop_pages(1, [1])          # newest scans first (one page)
+            completed, newest, nxt = await self._walk_shop_pages(max(2, self._resume_page - 1), budget)
+            newest = max(newest, newest1)
+        if completed:
+            if newest:
+                self._shops_watermark = max(self._shops_watermark, newest)
+            self._resume_page = None
+        else:
+            self._resume_page = nxt
+            log.warning("cozy: shop discovery hit the %d-page valve; watermark kept, resuming at page %d next cycle",
+                        self.MAX_SHOP_PAGES, nxt)
+        return self.MAX_SHOP_PAGES - budget[0], newest
+
+    async def _fetch_shop_rows(self, shop: str, prev_seen: float) -> list[dict[str, Any]]:
+        """All rows of a shop, across every page, stopping once rows are older than what we already have."""
+        rows: list[dict[str, Any]] = []
+        page = 1
+        while page <= self.MAX_LISTING_PAGES:
+            data = await self.fetch_json(f"/api/shops/{quote(shop, safe='')}/listings",
+                                         {"page": page, "size": self.PAGE})
+            batch = (data or {}).get("rows") or []
+            rows.extend(batch)
+            pages = int((data or {}).get("pages") or 1)
+            if not batch or page >= pages:
+                break
+            if batch and min(float(r.get("at") or 0) for r in batch) <= prev_seen - 2:
+                break   # rows are returned newest first; everything further back was already processed
+            page += 1
+        return rows
+
+    def drain_budget_s(self) -> float:
+        """Time budget per cycle for fetching queued shops (adaptive: the queue must not grow unbounded)."""
+        return max(2.0, self.interval_s * 0.8)
 
     async def _drain_pending(self, new: dict[str, Listing]) -> int:
-        """Fetch rows for up to max_shops_per_cycle queued shops (newest first); the rest stay queued."""
+        """Fetch rows for queued shops, newest first: at least max_shops_per_cycle, and as many more as the
+        time budget allows while a backlog exists. Shops that do not fit stay queued."""
         order = sorted(self._pending.items(), key=lambda kv: -kv[1]["last_at"])
         done = 0
-        for shop, meta in order[: self.max_shops_per_cycle]:
+        t0 = time.monotonic()
+        budget = self.drain_budget_s()
+        for i, (shop, meta) in enumerate(order):
+            if i >= self.max_shops_per_cycle and time.monotonic() - t0 > budget:
+                break
             prev = self._shop_seen_at.get(shop, 0.0)
             try:
-                data = await self.fetch_json(f"/api/shops/{quote(shop, safe='')}/listings",
-                                             {"page": 1, "size": self.PAGE})
+                rows = await self._fetch_shop_rows(shop, prev)
             except FetchError as exc:
                 meta["fails"] = meta.get("fails", 0) + 1
                 log.debug("shop %s listings failed: %s (attempt %d)", shop, exc, meta["fails"])
@@ -159,7 +205,7 @@ class CozyAdapter(BaseAdapter):
             self._shop_seen_at[shop] = meta["last_at"]
             self._pending.pop(shop, None)
             done += 1
-            for row in (data or {}).get("rows") or []:
+            for row in rows:
                 if float(row.get("at") or 0) <= prev - 2:
                     continue
                 lst = self._row_to_listing(row, shop, meta.get("title"), meta.get("channel"), meta.get("fm_room"),
@@ -171,6 +217,7 @@ class CozyAdapter(BaseAdapter):
     async def _poll_deals(self, new: dict[str, Listing]) -> float:
         """Under-reference feed, paginated until rows older than the watermark appear."""
         newest, page, floor = 0.0, 1, self._deals_watermark
+        completed = False
         while page <= self.MAX_DEAL_PAGES:
             deals = await self.fetch_json("/api/deals", {"page": page, "size": self.PAGE, "kind": "under-fm",
                                                           "seen": "1h", "sort": "at", "dir": "desc"})
@@ -189,10 +236,13 @@ class CozyAdapter(BaseAdapter):
                 if lst:
                     new.setdefault(lst.listing_key + ("|sold" if lst.sold else ""), lst)
             if reached_old or page >= int((deals or {}).get("pages") or 1):
+                completed = True
                 break
             page += 1
-        if newest:
+        if completed and newest:
             self._deals_watermark = max(self._deals_watermark, newest)
+        elif not completed:
+            log.warning("cozy: deals feed hit the %d-page safety valve; watermark kept", self.MAX_DEAL_PAGES)
         return newest
 
     async def poll(self) -> list[Listing]:

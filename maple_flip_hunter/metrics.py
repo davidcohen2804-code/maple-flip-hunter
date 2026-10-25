@@ -30,6 +30,13 @@ class Rolling:
     def last(self) -> Optional[float]:
         return self.values[-1] if self.values else None
 
+    def stats(self) -> Optional[dict[str, float]]:
+        if not self.values:
+            return None
+        s = sorted(self.values)
+        return {"n": len(s), "min": s[0], "median": s[len(s) // 2], "p95": s[min(len(s) - 1, int(len(s) * 0.95))],
+                "max": s[-1], "avg": sum(s) / len(s)}
+
 
 class Metrics:
     def __init__(self) -> None:
@@ -92,6 +99,8 @@ class Metrics:
                 "analysis_ms_avg": self.analysis_ms.avg,
                 "analysis_ms_p95": self.analysis_ms.p95,
                 "source_to_alert_avg_s": self.source_to_alert_s.avg,
+                "source_to_alert_s": self.source_to_alert_s.stats(),
+                "source_age_at_ingest_s": self.source_age_at_ingest.stats(),
                 "ingest_to_alert_avg_ms": self.ingest_to_alert_ms.avg,
                 "poll_interval_avg_s": {k: v.avg for k, v in self.poll_intervals.items()},
                 **self.process_usage(),

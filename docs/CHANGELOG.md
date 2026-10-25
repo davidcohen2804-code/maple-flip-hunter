@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 — 2026-10-25 (second review round)
+* cozy: no hard shop cap — safety valve keeps the watermark and resumes the walk next cycle; time-budgeted queue drain; all pages of a shop's listings are read; deals valve keeps its watermark.
+* Latency distributions (min/median/p95) for source→alert and source→first sight in metrics and the verification report.
+* 47 unit tests.
+
 ## 0.2.0 — 2026-10-25 (review fixes)
 * cozy: persistent shop queue + pagination of shops and deals; nothing dropped when more shops change than one cycle fetches; backlog in health.
 * DB: repricing inferred only across scans; same-scan multi-unit rows are independent listings.

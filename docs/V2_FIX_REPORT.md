@@ -67,3 +67,32 @@ treated as UNVERIFIED.
 ## Test count
 Unit suite: **42 passed** (was 33). Windows suite: 6 tests (skipped off-Windows). Live suite: 3 tests (skipped unless
 `MFH_LIVE=1`).
+
+---
+
+# V3 additions (second review round)
+
+### 500-shop cap and extreme bursts — FIXED
+* The page valve is now a pure safety valve (200 pages = 20,000 shops per cycle, 50 pages = 5,000 deal rows). When it
+  is hit, the **watermark is not advanced** and the walk **resumes next cycle from the page where it stopped** (one
+  page of overlap, after a quick look at page 1 for brand-new scans), so no shop can fall behind the watermark.
+* The drain of the shop queue is now time-budgeted (80 % of the poll interval, at least `max_shops_per_cycle`
+  shops): under load the collector fetches as many queued shops as fit instead of a fixed 25, so the queue cannot grow
+  unbounded while the per-cycle floor still bounds the request rate in quiet periods.
+* Tests: 1,200 shops changed in one cycle (12 pages) with a strict cap → every shop fetched exactly once, nothing lost;
+  valve forced to 2 pages on 400 changed shops → resumes over following cycles until all 400 are collected; time budget
+  drains a 100-shop backlog in one cycle; deals valve keeps its watermark and the remaining rows arrive next cycle
+  without duplicates.
+* Remaining, documented start-up rule: on first start only shops scanned in the last 5 minutes are processed
+  (older rows are stale by definition and never alerted anyway).
+
+### Shop scans limited to the first 100 rows — FIXED
+`_fetch_shop_rows()` walks every page of `/api/shops/{shop}/listings` (rows are newest-first; it stops at the page
+whose rows are older than what was already processed for that shop). Test: a shop with 250 rows → 3 pages, 250 rows.
+
+### Live latency measurement — instrumented, NOT YET RUN
+`metrics.source_to_alert_s` now records the distribution (n/min/median/p95/max/avg) of
+*notified_at − source observation timestamp*, and `source_age_at_ingest_s` the same for observation → first sight.
+Both appear in `VERIFICATION_REPORT.md`. **No Windows run has been executed yet** (see §3 above): the GitHub
+repository `davidcohen2804-code/maple-flip-hunter` does not exist at the time of writing, and the development
+environment cannot reach the sources. Unit suite: **47 passed**.

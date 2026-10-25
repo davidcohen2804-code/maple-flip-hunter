@@ -2,7 +2,7 @@
 
 ## Synthetic unit tests — executed 2026-10-25 (Linux x86-64, Python 3.13.17, PySide6 6.12.0, QT_QPA_PLATFORM=offscreen)
 
-Command: `python -m pytest tests/unit -q` → **42 passed, 0 failed** (V2, 3.1 s); Windows runtime suite (6) and live suite (3) skipped off-Windows / without MFH_LIVE.
+Command: `python -m pytest tests/unit -q` → **47 passed, 0 failed** (V3, 3.4 s); Windows runtime suite (6) and live suite (3) skipped off-Windows / without MFH_LIVE.
 
 | Spec case (§15) | Test | Result |
 |---|---|---|

@@ -60,6 +60,7 @@ def _adapter(fake: FakeCozy, max_shops: int) -> CozyAdapter:
 def test_more_changed_shops_than_one_cycle_allows_are_all_fetched():
     fake = FakeCozy(60)
     a = _adapter(fake, max_shops=25)
+    a.drain_budget_s = lambda: 0.0
     got = []
     for _ in range(3):
         got += run(a.poll())
@@ -82,6 +83,7 @@ def test_shop_discovery_paginates_when_a_whole_page_is_new():
 def test_backlog_is_reported_and_newest_shops_go_first():
     fake = FakeCozy(40)
     a = _adapter(fake, max_shops=10)
+    a.drain_budget_s = lambda: 0.0        # strict per-cycle cap (no time budget) to test the queue
     run(a.poll())
     assert a.backlog == 30
     assert fake.listing_calls == [f"shop{i:03d}" for i in range(10)]   # newest first
@@ -91,6 +93,7 @@ def test_backlog_is_reported_and_newest_shops_go_first():
 def test_shop_updated_again_while_queued_is_not_lost():
     fake = FakeCozy(30)
     a = _adapter(fake, max_shops=5)
+    a.drain_budget_s = lambda: 0.0
     run(a.poll())                       # shop000..004 fetched, 25 queued
     fake.shops[29]["last_at"] = fake.base + 10   # the oldest queued shop gets a fresh scan
     run(a.poll())                       # it must now be first in line
@@ -159,3 +162,93 @@ def test_msw_unfetched_candidates_remain_candidates():
     got = run(a.poll()) ; assert a.backlog == 30 and len(got) == 20
     got += run(a.poll()); got += run(a.poll())
     assert a.backlog == 0 and len(set(fetched)) == 50 and len(got) == 50
+
+
+def test_extreme_burst_1200_changed_shops_nothing_lost():
+    """12 pages of changed shops in one cycle (far above the ~360/hour observed) with a small per-cycle cap."""
+    fake = FakeCozy(1200)
+    a = _adapter(fake, max_shops=25)
+    a.drain_budget_s = lambda: 0.0         # strict cap -> many cycles needed
+    a._shops_watermark = 0                 # the fake spreads scans over 20 min; ignore the 5-min start-up window
+    got = []
+    for _ in range(80):
+        got += run(a.poll())
+        if a.backlog == 0 and len(got) >= 1200:
+            break
+    assert max(fake.page_calls) == 12
+    assert len(set(fake.listing_calls)) == 1200 and len(fake.listing_calls) == 1200
+    assert {l.seller for l in got} == {s["shop"] for s in fake.shops}
+    assert a.backlog == 0
+
+
+def test_safety_valve_keeps_watermark_so_next_cycle_resumes():
+    fake = FakeCozy(400)
+    a = _adapter(fake, max_shops=1000)
+    a._shops_watermark = 0
+    a.MAX_SHOP_PAGES = 2                   # pretend the valve is tiny
+    got = run(a.poll())                    # only 200 newest shops discovered this cycle
+    assert len(got) == 200 and a.backlog == 0 and a._resume_page == 3
+    for _ in range(6):                     # watermark was NOT advanced -> the walk resumes until complete
+        got += run(a.poll())
+        if a._resume_page is None:
+            break
+    assert len(got) == 400 and a._resume_page is None
+    assert {l.seller for l in got} == {s["shop"] for s in fake.shops}
+
+
+def test_time_budget_drains_more_than_the_minimum_when_backlogged():
+    fake = FakeCozy(100)
+    a = _adapter(fake, max_shops=5)
+    a.interval_s = 10                      # 8 s budget: with an in-memory transport all 100 fit in one cycle
+    got = run(a.poll())
+    assert len(got) == 100 and a.backlog == 0
+
+
+def test_shop_with_many_rows_is_read_across_all_pages():
+    base = time.time()
+    n_rows = 250
+
+    def handler(req):
+        p = req.url.path
+        q = dict(req.url.params)
+        if p == "/api/shops":
+            return httpx.Response(200, json={"rows": [{"shop": "Big", "seller": "Big", "title": "t", "channel": 1,
+                                                       "fm_room": 1, "map_name": "Free Market", "last_at": base}], "pages": 1})
+        if p == "/api/shops/Big/listings":
+            page, size = int(q["page"]), int(q["size"])
+            rows = [{"id": 98, "name": f"Item {i}", "at": base - i * 0.01, "qty": 1, "stock": 1, "channel": 1, "fm_room": 1,
+                     "map_name": "Free Market <1>", "price": 1000 + i, "unit_price": 1000 + i, "sold": False, "fm": 50_000,
+                     "stats": None} for i in range(n_rows)][(page - 1) * size: page * size]
+            return httpx.Response(200, json={"rows": rows, "pages": (n_rows + size - 1) // size})
+        if p in ("/api/deals", "/api/items"):
+            return httpx.Response(200, json={"rows": [], "pages": 1})
+        return httpx.Response(404)
+    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    a.bucket.rate = 10_000
+    a._catalog_at = time.time()
+    got = run(a.poll())
+    assert len(got) == n_rows                                  # 3 pages, every row ingested
+
+
+def test_deals_safety_valve_keeps_watermark():
+    rows_all = [{"id": i, "name": f"Item {i}", "fm": 50_000, "shop": f"s{i}", "channel": 1, "fm_room": 1,
+                 "map_name": "Free Market <1>", "at": 2_000_000 - i, "price": 10_000, "cat": "Use"} for i in range(300)]
+
+    def handler(req):
+        p = req.url.path
+        if p == "/api/deals":
+            page = int(dict(req.url.params)["page"])
+            return httpx.Response(200, json={"rows": rows_all[(page - 1) * 100: page * 100], "pages": 3})
+        if p in ("/api/shops", "/api/items"):
+            return httpx.Response(200, json={"rows": [], "pages": 1})
+        return httpx.Response(404)
+    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    a.bucket.rate = 10_000
+    a._catalog_at = time.time()
+    a._deals_watermark = 0
+    a.MAX_DEAL_PAGES = 2
+    got = run(a.poll())
+    assert len(got) == 200 and a._deals_watermark == 0        # valve hit -> watermark untouched
+    a.MAX_DEAL_PAGES = 50
+    got += run(a.poll())
+    assert len(got) == 300                                     # the remaining 100 arrive next cycle, no duplicates

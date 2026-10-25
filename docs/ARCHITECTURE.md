@@ -39,7 +39,8 @@ when cold.
 
 ## Incremental collection
 * cozy: `/api/shops?sort=last_at` is a cheap "what changed" list (paginated while a whole page is new); every changed
-  shop enters a persistent queue and ≤25 are fetched per 10 s cycle, newest first — the rest wait, never dropped.
+  shop enters a persistent queue; ≥25 (more within an 8 s time budget) are fetched per 10 s cycle, newest first, all
+  listing pages per shop — the rest wait, never dropped; a cut-off walk resumes next cycle without moving the watermark.
   `/api/deals seen=1h` is paginated until the watermark. Per-shop watermarks prevent re-emitting rows.
 * maplestory.watch: one index fetch per 3 min; item pages only for items whose `lowest` is ≥20 % under
   `typical` and whose `seen` moved (≤40 per cycle).
