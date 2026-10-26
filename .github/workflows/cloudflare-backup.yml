@@ -23,7 +23,7 @@ jobs:
       - run: |
           cd server/cloudflare
           ID=$(wrangler d1 list --json | python3 -c "import json,sys; print(next(d['uuid'] for d in json.load(sys.stdin) if d['name']=='mfh-licenses'))")
-          sed -i "s/REPLACED_BY_DEPLOY/$ID/" wrangler.toml
+          sed -i -E "s/^database_id = .*/database_id = \"$ID\"/" wrangler.toml
           wrangler d1 export mfh-licenses --remote --output ../../licenses-backup.sql
           wc -l ../../licenses-backup.sql
       - uses: actions/upload-artifact@v4

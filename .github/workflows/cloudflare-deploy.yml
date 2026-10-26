@@ -44,7 +44,7 @@ jobs:
             wrangler d1 create mfh-licenses
             ID=$(wrangler d1 list --json | python3 -c "import json,sys; print(next(d['uuid'] for d in json.load(sys.stdin) if d['name']=='mfh-licenses'))")
           fi
-          sed -i "s/REPLACED_BY_DEPLOY/$ID/" wrangler.toml
+          sed -i -E "s/^database_id = .*/database_id = \"$ID\"/" wrangler.toml
           wrangler d1 execute mfh-licenses --remote --file schema.sql
       - name: Deploy worker
         id: url

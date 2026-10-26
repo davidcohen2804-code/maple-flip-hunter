@@ -8,7 +8,7 @@ workers_dev = true
 [[d1_databases]]
 binding = "DB"
 database_name = "mfh-licenses"
-database_id = "REPLACED_BY_DEPLOY"      # the deploy workflow fills this in from `wrangler d1 list`
+database_id = "084d45c9-f6be-461a-ae85-545b66390f9f"   # D1 "mfh-licenses" (the id is not a secret; the deploy workflow re-reads it anyway)
 
 # per-IP abuse limit (free, part of Workers): 60 requests / 60 s
 [[unsafe.bindings]]
