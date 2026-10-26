@@ -79,6 +79,42 @@ jobs:
           if ($p.ExitCode -ne 0) { exit 1 }
           python tools/check_clubfm_sim_result.py reports\exe_clubfm_sim_result.json
 
+      - name: Friends Edition — build one-file EXE and run trial/expiry/lock/renewal against a local licence server
+        shell: pwsh
+        run: |
+          python server/license_server.py --init
+          $pub = (Get-Content server/public_key.txt).Trim()
+          Copy-Item maple_flip_hunter\_edition.txt maple_flip_hunter\_edition.bak
+          "friends" | Set-Content -NoNewline maple_flip_hunter\_edition.txt
+          "{""server"": ""http://127.0.0.1:8797"", ""public_key"": ""$pub""}" | Set-Content maple_flip_hunter\friends_config.json
+          python -m PyInstaller --noconfirm --clean build/windows/MapleFlipHunterFriends.spec
+          Move-Item maple_flip_hunter\_edition.bak maple_flip_hunter\_edition.txt -Force
+          Remove-Item maple_flip_hunter\friends_config.json
+          if (-not (Test-Path dist\MapleFlipHunterFriends.exe)) { "NO FRIENDS EXE"; exit 1 }
+          $srv = Start-Process -FilePath python -ArgumentList "server/license_server.py","--serve","8797" -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          # 1) first start: trial begins on the server (exit 0)
+          $p = Start-Process -FilePath dist\MapleFlipHunterFriends.exe -ArgumentList "--license-check","reports\lic1.json" -PassThru -Wait
+          "activation exit $($p.ExitCode): $(Get-Content reports\lic1.json)"
+          if ($p.ExitCode -ne 0) { exit 1 }
+          python tools/check_license_result.py reports\lic1.json trial
+          # 2) trial start moved back 73 h on the server (its clock decides): locked (exit 3)
+          python tools/ci_license_shift.py server/licenses.sqlite3
+          $p = Start-Process -FilePath dist\MapleFlipHunterFriends.exe -ArgumentList "--license-check","reports\lic2.json" -PassThru -Wait
+          "expired exit $($p.ExitCode): $(Get-Content reports\lic2.json)"
+          if ($p.ExitCode -ne 3) { "EXPECTED LOCK"; exit 1 }
+          python tools/check_license_result.py reports\lic2.json expired
+          # 3) activation code issued by the admin tool -> licensed (exit 0)
+          $code = ((python server/license_server.py --code 30) -split ': ')[-1].Trim()
+          python tools/ci_license_redeem.py http://127.0.0.1:8797 $code
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $p = Start-Process -FilePath dist\MapleFlipHunterFriends.exe -ArgumentList "--license-check","reports\lic3.json" -PassThru -Wait
+          "renewed exit $($p.ExitCode): $(Get-Content reports\lic3.json)"
+          if ($p.ExitCode -ne 0) { exit 1 }
+          python tools/check_license_result.py reports\lic3.json licensed
+          Stop-Process -Id $srv.Id -Force
+          Copy-Item dist\MapleFlipHunterFriends.exe reports\MapleFlipHunterFriends-CI-DEMO.exe
+
       - name: Write verification report and package the home-test build
         shell: pwsh
         run: |

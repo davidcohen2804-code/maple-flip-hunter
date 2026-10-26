@@ -288,6 +288,55 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip(APP_NAME)
         self.tray.show()
 
+    # ------------------------------------------------------------ Friends Edition licence
+    def attach_license(self, client) -> None:
+        """Re-validate every 10 minutes; lock the window when the trial runs out while the app is open."""
+        from .lock_dialog import LockDialog
+
+        self.license_client = client
+        self.setWindowTitle(self.windowTitle() + " — Friends Edition")
+
+        def tick() -> None:
+            client.refresh()
+            st = client.state()
+            if st.status in ("trial", "licensed"):
+                if st.remaining_s is not None and st.status == "trial":
+                    self.status.showMessage(f"Trial: {st.remaining_s / 3600:.1f} h left", 5000)
+                self._maybe_offer_update()
+                return
+            self.engine.stop()
+            dlg = LockDialog(client, reason=st.message, parent=self)
+            if dlg.exec() and dlg.unlocked:
+                self.engine.start()
+            else:
+                self.quit_app()
+        self.license_timer = QTimer(self)
+        self.license_timer.timeout.connect(tick)
+        self.license_timer.start(10 * 60 * 1000)
+        QTimer.singleShot(5000, self._maybe_offer_update)
+
+    def _maybe_offer_update(self) -> None:
+        client = getattr(self, "license_client", None)
+        if client is None or getattr(self, "_update_offered", False):
+            return
+        from ..licensing import update as upd
+
+        m = upd.check(client.server, client.public_key)
+        if not m:
+            return
+        self._update_offered = True
+        from PySide6.QtWidgets import QMessageBox
+
+        if QMessageBox.question(self, "Update available", f"Version {m['version']} is available (signed by the publisher). "
+                                "Download and install now?") != QMessageBox.Yes:
+            return
+        path = upd.download(m)
+        if path is None:
+            QMessageBox.warning(self, "Update", "The download could not be verified and was discarded.")
+            return
+        if upd.apply(path):
+            self.quit_app()
+
     # ------------------------------------------------------------ FM Watcher process
     def autostart_fmwatcher(self) -> None:
         s = self.settings

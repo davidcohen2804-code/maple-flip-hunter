@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.0 — 2026-10-26 (Friends Edition: one-file EXE, 3-day trial licence, signed updates)
+* Build edition flag (`maple_flip_hunter/_edition.txt`): developer build unrestricted; **Friends Edition** =
+  one-file `MapleFlipHunterFriends.exe` built by `build\windows\build_friends.bat <server> <public key>`.
+  Bundled: server URL + Ed25519 PUBLIC key only. No private keys, no provider credentials.
+* Licence client: trial of 72 h from the first activation by the **server's** clock, bound to a hashed machine id
+  (MachineGuid + system-drive serial + Windows install date) → reinstalling / deleting %APPDATA% or the registry
+  copy does not restart it; signed token cached locally; clock moved back → locked until the server is reached;
+  > 24 h without server contact → locked; re-check every 10 min while running.
+* Lock screen: "Your 3-day free trial has expired." + contact e-mail + **Copy Email** + activation code field +
+  Check again. Codes issued by `server/license_server.py --code <days>` (0 = lifetime), one machine per code.
+* Reference licence server (`server/license_server.py`, stdlib + cryptography): /v1/activate, /v1/status,
+  /v1/redeem, /v1/update; `--init`, `--serve`, `--code`, `--list`, `--update`.
+* Secure update: signed manifest (version, url, sha256) verified with the public key; download verified by sha256;
+  self-replace via helper script; anything unsigned/tampered is ignored.
+* Market data is NOT proxied through the backend: every client fetches its sources itself; the backend is for
+  licensing/updates only (no redistribution rights for provider data). Source names stay visible.
+* CI: builds the Friends EXE, runs a local licence server and drives the EXE through trial → expiry → lock →
+  renewal (`--license-check`). 107 unit tests.
+
+
 ## 0.7.4 — 2026-10-26 (Physical Scanner tab)
 * New **Physical Scanner** tab: green **Start Scanning** (starts FM Watcher hidden, no console) / red **Stop Scanning**
   (stops only the FM Watcher process; maplestory.watch and the other internet sources keep running), status pill

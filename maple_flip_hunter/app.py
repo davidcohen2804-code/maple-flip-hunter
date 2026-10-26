@@ -35,6 +35,29 @@ def main(argv: list[str] | None = None) -> int:
     app.setQuitOnLastWindowClosed(False)
 
     settings = Settings.load()
+    from .edition import is_friends
+
+    license_client = None
+    if is_friends() or "--friends" in argv:
+        from .licensing import LicenseClient
+        from .ui.lock_dialog import LockDialog
+
+        server = argv[argv.index("--license-server") + 1] if "--license-server" in argv else ""
+        pub = argv[argv.index("--license-pubkey") + 1] if "--license-pubkey" in argv else ""
+        license_client = LicenseClient(server=server, public_key=pub)
+        st = license_client.ensure()
+        if "--license-check" in argv:            # CI / support: write the decision to a file and exit (0 ok, 3 locked)
+            import json
+
+            out = argv[argv.index("--license-check") + 1]
+            with open(out, "w", encoding="utf-8") as f:
+                json.dump({"status": st.status, "expires_at": st.expires_at, "remaining_s": st.remaining_s,
+                           "message": st.message, "online": st.online, "machine": license_client.machine[:12]}, f)
+            return 0 if st.status in ("trial", "licensed") else 3
+        if st.status not in ("trial", "licensed"):
+            dlg = LockDialog(license_client, reason=st.message)
+            if not dlg.exec() or not dlg.unlocked:
+                return 3
     db = Database(db_path())
     from .collector.engine import MarketEngine
     from .notifications import Notifier
@@ -43,6 +66,8 @@ def main(argv: list[str] | None = None) -> int:
     notifier = Notifier(volume=settings.alert_volume)
     engine = MarketEngine(settings, db, notifier)
     win = MainWindow(engine, settings, notifier)
+    if license_client is not None:
+        win.attach_license(license_client)
     if settings.start_minimized or "--minimized" in argv:
         win.hide()
     else:
