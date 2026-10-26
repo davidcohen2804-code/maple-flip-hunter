@@ -95,6 +95,8 @@ class Settings(BaseModel):
     # Sound per NET-PROFIT band (the profit the pricing engine actually computed, not the JACKPOT/GOOD label).
     # Tiers must not overlap; a disabled tier (or a profit outside every tier) alerts without sound.
     sound_tiers: list[SoundTier] = Field(default_factory=default_sound_tiers)
+    # Minimum deal-confidence grade for an AUDIBLE alert (LOW deals still show in the table / toast without sound)
+    alert_min_confidence_label: str = Field("MEDIUM", pattern="^(LOW|MEDIUM|HIGH)$")
 
     @model_validator(mode="after")
     def _tiers_ok(self) -> "Settings":

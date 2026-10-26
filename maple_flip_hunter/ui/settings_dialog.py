@@ -161,6 +161,17 @@ class SettingsDialog(QDialog):
         g3 = QGroupBox("Alerts & behaviour")
         v3 = QVBoxLayout(g3)
         v3.setContentsMargins(16, 20, 16, 16)
+        conf_row = QHBoxLayout()
+        conf_row.addWidget(QLabel("Sound only for deals with confidence at least"))
+        self.conf_min = QComboBox()
+        for lbl in ("LOW", "MEDIUM", "HIGH"):
+            self.conf_min.addItem(lbl, lbl)
+        self.conf_min.setCurrentIndex(self.conf_min.findData(s.alert_min_confidence_label))
+        conf_row.addWidget(self.conf_min)
+        conf_row.addStretch(1)
+        conf_host = QWidget()
+        conf_host.setLayout(conf_row)
+        v3.addWidget(conf_host)
         self.cb_notif = QCheckBox("Notifications enabled")
         self.cb_notif.setChecked(s.notifications_enabled)
         self.cb_jp = QCheckBox("Alarm for JACKPOT")
@@ -382,6 +393,7 @@ class SettingsDialog(QDialog):
             max_listing_age_s=self.max_age.value(), notifications_enabled=self.cb_notif.isChecked(),
             alert_jackpot=self.cb_jp.isChecked(), alert_good=self.cb_good.isChecked(),
             show_uncertain=self.cb_unc.isChecked(), start_minimized=self.cb_min.isChecked(),
+            alert_min_confidence_label=self.conf_min.currentData(),
             run_on_windows_startup=self.cb_startup.isChecked(), source_cozy_enabled=self.cb_cozy.isChecked(),
             source_cozy_interval_s=self.cozy_int.value(), source_msw_enabled=self.cb_msw.isChecked(),
             source_msw_interval_s=self.msw_int.value(), source_cozy_token=self.cozy_token.text().strip(),

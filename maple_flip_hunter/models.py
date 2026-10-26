@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 class SourceStatus(str, Enum):
     ONLINE = "ONLINE"
+    IDLE = "IDLE"                 # healthy, just nothing new for a while (e.g. you are not opening shops)
+    ERROR = "ERROR"               # repeated failures; auto-recovery with back-off is running
     STALE = "STALE"
     RATE_LIMITED = "RATE LIMITED"
     AUTH_REQUIRED = "AUTH REQUIRED"
@@ -118,6 +120,11 @@ class Valuation(BaseModel):
     competitors: int = 0
     cheapest_competitor: Optional[int] = None
     evidence_age_s: Optional[float] = None   # age of the reference statistics behind this valuation
+    confidence_score: int = 0                # 0..100 (= confidence × 100); label INSUFFICIENT DATA when no reference
+    sample_count: int = 0                    # independent price samples behind the reference
+    unique_sellers: int = 0                  # distinct sellers among those samples
+    price_spread: Optional[float] = None     # (p75 − p25) / median of the samples, when ≥ 4 samples
+    confidence_reason: str = ""              # one line: why this grade
     explanation: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
 
@@ -158,3 +165,9 @@ class SourceHealth(BaseModel):
     listings_received: int = 0
     rate_limited_until: Optional[float] = None
     detail: str = ""
+    consecutive_failures: int = 0
+    recent_errors: list[tuple[float, str]] = Field(default_factory=list)   # (time, message), newest last, ≤ 20
+    last_poll_at: Optional[float] = None
+    polls: int = 0
+    restarts: int = 0
+    stopped_by_user: bool = False

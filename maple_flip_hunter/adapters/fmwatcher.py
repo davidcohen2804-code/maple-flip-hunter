@@ -203,8 +203,10 @@ class FMWatcherAdapter(BaseAdapter):
     async def poll(self) -> list[Listing]:
         self.polls += 1
         if self.paused:
+            self.health.stopped_by_user = True
             self._set_status(SourceStatus.UNAVAILABLE, "stopped by you (Physical Scanner → Stop Scanning)")
             return []
+        self.health.stopped_by_user = False
         store, csv_path = self._paths()
         if store is None:
             self._set_status(SourceStatus.UNSUPPORTED, "FM Watcher folder not set (Settings → Sources)")
@@ -249,6 +251,9 @@ class FMWatcherAdapter(BaseAdapter):
         age = time.time() - mtime
         if age > 600:
             self._set_status(SourceStatus.STALE, f"{self.file_used} not updated for {age/60:.0f} min — is FM Watcher running and are you in the FM?")
+        elif age > 120:
+            self.mark_success(age, 0)
+            self._set_status(SourceStatus.IDLE, f"reading {self.file_used}; no new scans for {age/60:.0f} min (open shops in the FM)")
         else:
             self.mark_success(age, 0)
             self.health.detail = f"reading {self.file_used}; no new scans in the last {age:.0f}s"

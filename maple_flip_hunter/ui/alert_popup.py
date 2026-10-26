@@ -63,7 +63,7 @@ class AlertPopup(QWidget):
         self.avail.setObjectName("muted")
         self.avail.setWordWrap(True)
         v.addWidget(self.avail)
-        meta = QLabel(f"confidence {val.confidence_label} ({val.confidence:.2f}) · seen by source "
+        meta = QLabel(f"confidence {val.confidence_label} {val.confidence_score}/100 · {val.sample_count} samples, {val.unique_sellers} sellers · seen by source "
                       f"{max(0.0, time.time() - l.source_seen_at):.0f}s ago"
                       + (f" · alert in {latency_ms:.0f} ms" if latency_ms is not None else ""))
         meta.setObjectName("muted")

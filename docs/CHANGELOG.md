@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0 — 2026-10-26 (Scanner Health · Deal Confidence 0–100)
+* **Scanner Health** (🩺 Health button): per-source status ONLINE / IDLE / STALE / ERROR / OFFLINE-type states with
+  last update, latency, rows, error count, detail, the last 20 errors (newest last), UI stalls and process RSS/CPU;
+  **Restart** per source (fresh client, counters reset) without touching the others; **Copy diagnostics**.
+  Repeated failures (≥ 3 in a row) become ERROR with bounded exponential back-off (≤ 5 min) and automatic
+  recovery; FM Watcher: IDLE = running but nothing new for 2+ min, STALE after 10 min; a watcher process that
+  exits is logged, restarted at most 3 times per 10 min, then left in ERROR with a tray message — never after
+  the user's own Stop.
+* **Deal Confidence 0–100** added on top of the unchanged pricing: independent samples (a listing re-scanned over
+  and over counts once), unique sellers, price spread, data age, completed-sale basis and equipment-variant
+  identification feed one score with grades HIGH / MEDIUM / LOW / **INSUFFICIENT DATA** (no reference → never an
+  alert). A single seller's prices never reach HIGH; < 3 samples never above LOW. Details panel shows the grade,
+  score, samples/sellers/spread/data age and a one-line reason; the alert card shows score and evidence.
+* Settings → "Sound only for deals with confidence at least" (default **MEDIUM**): LOW deals still appear in the
+  table and toast, without sound (`AUDIO_SUPPRESSED reason=confidence …`).
+* Tests: confidence from the real maplestory.watch fixture, single-seller cap, INSUFFICIENT DATA, sound gate,
+  failure → ERROR → back-off → recovery, per-source restart isolation, FM Watcher crash cap, health dialog.
+  120 unit tests.
+
+
 ## 0.8.3 — 2026-10-26 (UI freezes — root causes fixed)
 * **What froze the GUI thread** (measured, now covered by tests):
   1. The 1 s stats tick ran two `COUNT(*)` queries on the UI thread (one on an unindexed column) and waited on the

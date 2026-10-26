@@ -155,7 +155,11 @@ class MarketEngine:
         self._eval_lock = asyncio.Lock()
         for a in self.adapters:
             a._stop = asyncio.Event()  # fresh event bound to this loop (restart support)
-        self._tasks = [asyncio.create_task(a.run(self._make_handler(a))) for a in self.adapters]
+        self._tasks = []
+        for a in self.adapters:
+            t = asyncio.create_task(a.run(self._make_handler(a)))
+            t._mfh_source = a.name  # type: ignore[attr-defined]
+            self._tasks.append(t)
         self._tasks.append(asyncio.create_task(self._housekeeping()))
         self._verify_q = asyncio.PriorityQueue()
         self._tasks.append(asyncio.create_task(self._verify_loop()))
@@ -205,7 +209,7 @@ class MarketEngine:
 
     # ------------------------------------------------------------ state
     def _refresh_state(self) -> None:
-        online = [a for a in self.adapters if a.health.status == SourceStatus.ONLINE]
+        online = [a for a in self.adapters if a.health.status in (SourceStatus.ONLINE, SourceStatus.IDLE)]
         any_ok = [a for a in self.adapters if a.health.status in (SourceStatus.ONLINE, SourceStatus.STALE, SourceStatus.RATE_LIMITED)]
         fresh = self.last_data_at is not None and time.time() - self.last_data_at < 180
         if not self.running:
@@ -219,6 +223,49 @@ class MarketEngine:
 
     def health(self) -> list[SourceHealth]:
         return [a.health for a in self.adapters]
+
+    def restart_source(self, name: str) -> bool:
+        """Restart ONE source (fresh client, STARTING, failure counters reset) without touching the others."""
+        a = self._adapter_for(name)
+        if a is None or not self.running or self._loop is None:
+            return False
+        a.health.restarts += 1
+        a.health.stopped_by_user = False
+        log.info("SOURCE_RESTART %s (#%d)", name, a.health.restarts)
+
+        async def do() -> None:
+            for t in list(self._tasks):
+                if getattr(t, "_mfh_source", None) == name and not t.done():
+                    t.cancel()
+                    try:
+                        await t
+                    except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                        pass
+                    self._tasks.remove(t)
+            try:
+                await a.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+            a.reset()
+            a._stop = asyncio.Event()
+            t = asyncio.create_task(a.run(self._make_handler(a)))
+            t._mfh_source = name  # type: ignore[attr-defined]
+            self._tasks.append(t)
+        asyncio.run_coroutine_threadsafe(do(), self._loop)
+        return True
+
+    def diagnostics_text(self) -> str:
+        """Copy-able diagnostics: per-source health, recent errors, metrics, UI lag."""
+        lines = [f"Maple Flip Hunter diagnostics {time.strftime('%Y-%m-%d %H:%M:%S')} scanner={self.scanner_state}"]
+        for h in self.health():
+            lines.append(f"[{h.name}] {h.status.value} detail={h.detail!r} last_success={h.last_success_at and time.strftime('%H:%M:%S', time.localtime(h.last_success_at))} "
+                         f"latency_ms={h.last_latency_ms} rows={h.listings_received} polls={h.polls} errors={h.errors} "
+                         f"consecutive={h.consecutive_failures} restarts={h.restarts} newest_age_s={h.newest_data_age_s}")
+            for at, msg in h.recent_errors[-5:]:
+                lines.append(f"    {time.strftime('%H:%M:%S', time.localtime(at))} {msg}")
+        m = self.metrics.snapshot()
+        lines.append("metrics: " + ", ".join(f"{k}={v}" for k, v in m.items() if not isinstance(v, dict)))
+        return "\n".join(lines)
 
     def coverage(self) -> dict[str, Any]:
         """Cheap for the UI: while the scanner runs, the housekeeping task refreshes this every 2 s on the engine
@@ -404,6 +451,11 @@ class MarketEngine:
     def sound_for(self, opp: Opportunity) -> Optional[str]:
         """Sound id for this alert, chosen by the computed net profit (quick-sale net; the figure shown in the
         table). None = alert without sound (tier disabled, or profit outside every tier)."""
+        order = {"INSUFFICIENT DATA": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
+        if order.get(opp.valuation.confidence_label, 0) < order.get(self.settings.alert_min_confidence_label, 2):
+            log.info("AUDIO_SUPPRESSED reason=confidence %s below %s key=%s", opp.valuation.confidence_label,
+                     self.settings.alert_min_confidence_label, opp.key)
+            return None
         tier = tier_for_profit(self.settings.sound_tiers, opp.valuation.net_profit)
         if tier is None or not tier.enabled:
             return None

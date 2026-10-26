@@ -30,6 +30,29 @@ def _label(score: float) -> str:
     return "HIGH" if score >= 0.70 else "MEDIUM" if score >= 0.45 else "LOW"
 
 
+def _evidence_stats(ev) -> tuple[int, int, Optional[float]]:
+    """(independent samples, unique sellers, relative spread) from the comparables + competing asks.
+    The same listing re-scanned over and over is one sample (comps come from distinct stored rows)."""
+    rows = [c for c in list(ev.comps) + list(ev.active_asks) if c.unit_price]
+    seen = set()
+    prices, sellers = [], set()
+    for c in rows:
+        key = (c.seller or "", c.unit_price, round(c.at or 0, -2))
+        if key in seen:
+            continue
+        seen.add(key)
+        prices.append(float(c.unit_price))
+        if c.seller:
+            sellers.add(c.seller.lower())
+    n = max(len(prices), ev.sold_count)
+    spread = None
+    if len(prices) >= 4:
+        ps = sorted(prices)
+        p25, p75, med = ps[len(ps) // 4], ps[(3 * len(ps)) // 4], ps[len(ps) // 2]
+        spread = (p75 - p25) / med if med else None
+    return n, len(sellers), spread
+
+
 class PricingEngine:
     MIN_SOLD_FOR_REFERENCE = 5
     MIN_ASKS_FOR_REFERENCE = 5
@@ -74,7 +97,10 @@ class PricingEngine:
         if ref is None:
             v.explanation.append("Insufficient comparable transactions: cannot estimate a resale value.")
             v.risks.append("insufficient comparable transactions")
-            v.confidence, v.confidence_label = 0.1, "LOW"
+            v.confidence, v.confidence_label = 0.1, "INSUFFICIENT DATA"
+            v.confidence_score = 10
+            v.sample_count, v.unique_sellers, v.price_spread = _evidence_stats(ev)
+            v.confidence_reason = "no reference price: not enough independent samples"
             return v
 
         # ---------------- competitive conditions ----------------------
@@ -169,6 +195,26 @@ class PricingEngine:
         if not listing.seller or listing.seller in ("?", "null", "None"):
             v.risks.append("scanner did not read the shop name - you must find the shop by channel/room")
             score = min(score, 0.55)
+        # ---------------- evidence breadth (additive to the score above) -----------
+        v.sample_count, v.unique_sellers, v.price_spread = _evidence_stats(ev)
+        reasons: list[str] = []
+        if v.unique_sellers <= 1 and ev.sold_count < self.MIN_SOLD_FOR_REFERENCE:
+            score = min(score, 0.45)                                   # a single seller's prices never make HIGH
+            reasons.append("only one seller behind the samples")
+        elif v.unique_sellers >= 5:
+            reasons.append(f"{v.unique_sellers} independent sellers")
+        if v.price_spread is not None and v.price_spread > 0.35:
+            score *= 0.85
+            reasons.append(f"prices scattered (±{v.price_spread * 100:.0f}%)")
+        if v.sample_count < 3:
+            score = min(score, 0.40)
+            reasons.append(f"only {v.sample_count} price sample{'s' if v.sample_count != 1 else ''}")
         v.confidence = round(min(1.0, max(0.0, score)), 3)
         v.confidence_label = _label(v.confidence)
+        v.confidence_score = int(round(v.confidence * 100))
+        base = ref_basis.split(" (")[0]
+        age_txt = (f"data {ev.source_data_age_s / 60:.0f} min old" if ev.source_data_age_s is not None and ev.source_data_age_s < 3600
+                   else f"data {ev.source_data_age_s / 3600:.1f} h old" if ev.source_data_age_s is not None else "data age unknown")
+        v.confidence_reason = f"{v.confidence_label} ({v.confidence_score}/100): {base}; {v.sample_count} samples, {v.unique_sellers} sellers; {age_txt}" + \
+            (("; " + "; ".join(reasons)) if reasons else "")
         return v

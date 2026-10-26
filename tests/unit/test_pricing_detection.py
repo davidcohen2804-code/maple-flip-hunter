@@ -78,7 +78,7 @@ def test_6_little_sales_history_lowers_confidence(settings):
 
     ev_none = make_evidence(lst, sold_median=None, sold_count=0, sales24=0, sold_prices=(), asks=(), ask_count=0)
     v2 = PricingEngine(settings).value(lst, ev_none)
-    assert v2.reference is None and v2.confidence_label == "LOW"
+    assert v2.reference is None and v2.confidence_label == "INSUFFICIENT DATA" and v2.confidence_score == 10
 
 
 def test_12_selling_fee_calculation(settings):

@@ -147,8 +147,11 @@ class BaseAdapter:
         self.health.status = status
         self.health.detail = detail
 
+    MAX_BACKOFF_S = 300.0
+
     def mark_success(self, newest_data_age_s: Optional[float], n_listings: int) -> None:
         self.health.last_success_at = time.time()
+        self.health.consecutive_failures = 0
         self.health.newest_data_age_s = newest_data_age_s
         self.health.listings_received += n_listings
         self.health.rate_limited_until = None
@@ -163,10 +166,25 @@ class BaseAdapter:
 
     def mark_failure(self, exc: Exception) -> None:
         self.health.last_error = str(exc)[:200]
+        self.health.errors += 1
+        self.health.consecutive_failures += 1
+        self.health.recent_errors.append((time.time(), str(exc)[:200]))
+        del self.health.recent_errors[:-20]
         if isinstance(exc, RateLimited):
             self._set_status(SourceStatus.RATE_LIMITED, str(exc))
-        elif self.health.status != SourceStatus.AUTH_REQUIRED:
+        elif self.health.status == SourceStatus.AUTH_REQUIRED:
+            pass
+        elif self.health.consecutive_failures >= 3:
+            self._set_status(SourceStatus.ERROR, f"{self.health.consecutive_failures} failures in a row: {str(exc)[:100]} — retrying with back-off")
+        else:
             self._set_status(SourceStatus.UNAVAILABLE, str(exc)[:120])
+
+    def failure_backoff_s(self) -> float:
+        """Bounded exponential back-off after repeated failures (never faster than the normal interval)."""
+        n = self.health.consecutive_failures
+        if n < 2:
+            return 0.0
+        return min(self.MAX_BACKOFF_S, self.interval_s * (2 ** (n - 1)))
 
     # ---------------------------------------------------------------- availability
     verify_supported: bool = False          # True when verify() can answer from this source's data
@@ -206,9 +224,11 @@ class BaseAdapter:
                 continue
             except Exception as exc:  # noqa: BLE001
                 self.mark_failure(exc)
-                log.warning("%s poll failed: %s", self.name, exc)
+                log.warning("%s poll failed (%d in a row): %s", self.name, self.health.consecutive_failures, exc)
+            self.health.last_poll_at = time.time()
+            self.health.polls += 1
             elapsed = time.monotonic() - t0
-            await self._sleep(max(1.0, self.next_delay() - elapsed))
+            await self._sleep(max(1.0, self.next_delay() - elapsed, self.failure_backoff_s()))
 
     async def _sleep(self, seconds: float) -> None:
         try:

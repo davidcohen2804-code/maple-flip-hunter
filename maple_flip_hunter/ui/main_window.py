@@ -16,13 +16,14 @@ from .. import APP_NAME, USER_AGENT, __version__
 from ..collector.engine import MarketEngine
 from ..collector.normalize import stats_signature
 from ..config import Settings
-from ..models import Level, Opportunity, SourceHealth
+from ..models import Level, Opportunity, SourceHealth, SourceStatus
 from .bridge import EngineBridge
 from ..fmwatcher_launcher import FMWatcherLauncher
 from ..paths import log_dir
 from .alert_popup import AlertPopup
 from .physical_tab import PhysicalScannerTab
 from .watchdog import UiWatchdog
+from .health_dialog import HealthDialog
 from .flow_layout import FlowLayout
 from .settings_dialog import SettingsDialog, fit_on_screen
 from .startup import set_run_on_startup
@@ -120,7 +121,9 @@ class MainWindow(QMainWindow):
         self.btn_test.clicked.connect(self._test_alarm)
         self.btn_settings = QPushButton("⚙  Settings")
         self.btn_settings.clicked.connect(self.open_settings)
-        for b in (self.btn_test, self.btn_settings, self.btn_start):
+        self.btn_health = QPushButton("🩺  Health")
+        self.btn_health.clicked.connect(lambda: HealthDialog(self).exec())
+        for b in (self.btn_test, self.btn_settings, self.btn_health, self.btn_start):
             header.addWidget(b)
         root.addWidget(header_host)
 
@@ -363,10 +366,38 @@ class MainWindow(QMainWindow):
                 self.tray.showMessage("FM Watcher did not start", msg, QSystemTrayIcon.Warning, 10000)
         self._refresh_fmw_status()
 
+    def _watch_fmwatcher_process(self) -> None:
+        """Every 5 s: if a watcher WE started died, record ERROR and restart it (max 3 times per 10 min)."""
+        la = self.fmw_launcher
+        if not la.started_by_us or la.proc is None or la.proc.poll() is None:
+            return
+        if getattr(self.physical, "stopped_by_user", False):
+            return
+        code = la.proc.returncode
+        now = time.time()
+        hist = [t for t in getattr(self, "_fmw_restarts", []) if now - t < 600]
+        a = next((x for x in self.engine.adapters if x.name == "fmwatcher"), None)
+        if a is not None:
+            a.health.recent_errors.append((now, f"FM Watcher process exited (code {code})"))
+            del a.health.recent_errors[:-20]
+        log.warning("FM Watcher process exited (code %s); restarts in last 10 min: %d", code, len(hist))
+        la.started_by_us, la.proc = False, None
+        if len(hist) >= 3:
+            if a is not None:
+                a._set_status(SourceStatus.ERROR, f"FM Watcher keeps exiting (code {code}) — see logs\\fmwatcher_launch.log; press Start Scanning to retry")
+            self.tray.showMessage("FM Watcher stopped", f"It exited {len(hist) + 1} times in 10 minutes (code {code}). Not restarting automatically.",
+                                  QSystemTrayIcon.Warning, 10000)
+            return
+        hist.append(now)
+        self._fmw_restarts = hist
+        ok, msg = la.start()
+        self.status.showMessage(f"FM Watcher restarted automatically ({msg})" if ok else f"FM Watcher restart failed — {msg}", 10000)
+
     def _refresh_fmw_status(self) -> None:
         if not self.settings.source_fmwatcher_dir.strip():
             self._fmw_status_text = ""
             return
+        self._watch_fmwatcher_process()
         probe = getattr(self.physical, "_probe", None)
         if not probe:
             return
@@ -660,7 +691,12 @@ class MainWindow(QMainWindow):
         row("Net profit (quick)", f"<b style='color:{GREEN if (v.net_profit or 0) > 0 else RED}'>{v.net_profit:+,}</b>" if v.net_profit is not None else "n/a")
         row("Net profit (conservative)", f"{v.net_profit_conservative:+,}" if v.net_profit_conservative is not None else "n/a")
         row("ROI / Discount", (f"{v.roi:.0%}" if v.roi is not None else "n/a") + " / " + (f"{v.discount:.0%}" if v.discount is not None else "n/a"))
-        row("Confidence", f"{v.confidence_label} ({v.confidence:.2f})")
+        conf_color = {"HIGH": GREEN, "MEDIUM": YELLOW}.get(v.confidence_label, RED)
+        row("Confidence", f"<b style='color:{conf_color}'>{v.confidence_label} — {v.confidence_score}/100</b>")
+        row("Evidence", f"{v.sample_count} price samples from {v.unique_sellers} sellers"
+            + (f" · spread ±{v.price_spread * 100:.0f}%" if v.price_spread is not None else "")
+            + (f" · data {fmt_age(v.evidence_age_s)} old" if v.evidence_age_s is not None else ""))
+        row("Why this grade", esc(v.confidence_reason) if v.confidence_reason else "—")
         row("Liquidity", v.liquidity + (f" · {v.competitors} live competitors (cheapest {v.cheapest_competitor:,})" if v.competitors else " · no live competitors seen"))
         avail_color = {"ACTIVE": GREEN, "SOLD": RED, "REMOVED": RED}.get(opp.availability, MUTED)
         row("Availability", f"<b style='color:{avail_color}'>{opp.availability}</b>"
