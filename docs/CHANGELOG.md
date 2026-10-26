@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.3 — 2026-10-26 (FIX: FM Watcher stuck on STARTING)
+* Root cause: the FM Watcher adapter read the file correctly but never called `mark_success`, so its health could
+  not leave STARTING and nothing about it was logged. Reproduced with the user's real `watcher_data_v2.json`
+  (21 shop entries, Kerning City, channel 35) — now a regression test (unit + Windows).
+* Now: ONLINE after the first successful read (also when the file is unchanged and fresh), STALE after 10 min
+  without a write; status detail shows the file, its write time and the number of new/updated rows.
+* Logs: `fmwatcher: adapter created, folder=…`, `fmwatcher: poll #n read <path> (mtime …): N new/updated listings,
+  newest …s ago`, periodic "unchanged" lines, and every read error (`fmwatcher poll failed: …`).
+* OCR'd town names lose their first letter ("erning City Construction Site") — mapped back to the known map name;
+  FM rooms ("FM3") unchanged. Rows outside the Free Market keep channel + map name, no FM room.
+* maplestory.watch, pricing and alerts untouched. 95 unit tests.
+
+
 ## 0.7.2 — 2026-10-26 (availability tracking — without slowing alerts)
 * **Alert path unchanged and still first**: sound + floating card fire the moment a deal passes the filters; no
   network request is made before them (test: the sound timestamp precedes the first verification request).

@@ -44,6 +44,22 @@ def _stats(x: Any) -> Optional[dict[str, Any]]:
     return out or None
 
 
+_KNOWN_MAPS = ["Kerning City Construction Site", "Free Market Entrance", "Henesys Market", "Perion Street Corner",
+               "Ellinia Station", "Lith Harbor", "Sleepywood"]
+
+
+def _room_text(raw: Any) -> str:
+    """FM rooms come as 'FM3'; town maps may lose their first letter in OCR ('erning City Construction Site')."""
+    t = str(raw or "").strip()
+    if not t:
+        return ""
+    low = t.lower()
+    for name in _KNOWN_MAPS:
+        if low == name.lower() or (len(low) >= 6 and name.lower().endswith(low)):
+            return name
+    return t
+
+
 class FMWatcherAdapter(BaseAdapter):
     name = "fmwatcher"
     label = "FM Watcher (your own scans)"
@@ -56,6 +72,8 @@ class FMWatcherAdapter(BaseAdapter):
         super().__init__(*args, **kwargs)
         self.directory = Path(directory).expanduser() if directory else None
         self.max_age_s = max_age_s
+        self.polls = 0
+        log.info("fmwatcher: adapter created, folder=%s interval=%ss max_age=%ss", self.directory, self.interval_s, max_age_s)
         self._store_mtime = 0.0
         self._csv_mtime = 0.0
         self._seen: dict[str, float] = {}       # listing_key -> last 'last' timestamp handed out
@@ -111,7 +129,7 @@ class FMWatcherAdapter(BaseAdapter):
             category = "Equip" if stats or o.get("xj") else None
             ik = item_key(str(item), category, stats)
             ch = int(o["c"]) if o.get("c") else None
-            room_txt = str(o.get("r") or "")
+            room_txt = _room_text(o.get("r"))
             room = parse_fm_room(room_txt)
             lk = listing_key(self.name, ik, str(seller), ch, unit)
             self._latest[lk] = (("SOLD", last, "your scan saw the slot sold") if sold
@@ -179,6 +197,7 @@ class FMWatcherAdapter(BaseAdapter):
 
     # ------------------------------------------------------------------ poll
     async def poll(self) -> list[Listing]:
+        self.polls += 1
         store, csv_path = self._paths()
         if store is None:
             self._set_status(SourceStatus.UNSUPPORTED, "FM Watcher folder not set (Settings → Sources)")
@@ -186,37 +205,48 @@ class FMWatcherAdapter(BaseAdapter):
         if not self.directory.is_dir():
             raise FetchError(f"FM Watcher folder not found: {self.directory}")
         if store.exists():
-            m = os.path.getmtime(store)
-            self.file_used = STORE_FILE
+            path, m, self.file_used = store, os.path.getmtime(store), STORE_FILE
             if m == self._store_mtime:
-                self._idle(m)
-                return []
+                return self._idle(m)
             try:
                 rows = self._rows_from_store(store)
             except (OSError, ValueError) as exc:   # mid-write: the watcher replaces the file atomically, retry next poll
                 raise FetchError(f"could not read {STORE_FILE}: {exc}") from exc
             self._store_mtime = m
-            self.health.detail = f"{STORE_FILE} updated {time.strftime('%H:%M:%S', time.localtime(m))}"
-            return rows
-        if csv_path.exists():
-            m = os.path.getmtime(csv_path)
-            self.file_used = CSV_FILE
+        elif csv_path.exists():
+            path, m, self.file_used = csv_path, os.path.getmtime(csv_path), CSV_FILE
             if m == self._csv_mtime:
-                self._idle(m)
-                return []
+                return self._idle(m)
             rows = self._rows_from_csv(csv_path)
             self._csv_mtime = m
-            self.health.detail = f"{CSV_FILE} (run export.bat to refresh) {time.strftime('%H:%M:%S', time.localtime(m))}"
-            return rows
-        raise FetchError(f"neither {STORE_FILE} nor {CSV_FILE} in {self.directory} — is FM Watcher running / exported?")
+        else:
+            raise FetchError(f"neither {STORE_FILE} nor {CSV_FILE} in {self.directory} — is FM Watcher running / exported?")
+        self._last_file_mtime = m
+        newest = max((r.source_seen_at for r in rows), default=None)
+        now = time.time()
+        # file age = how fresh the scanner's last write is; that is what ONLINE/STALE should reflect
+        self.mark_success(max(0.0, now - m), len(rows))
+        self.health.detail = (f"reading {self.file_used} (written {time.strftime('%H:%M:%S', time.localtime(m))}); "
+                              f"{len(rows)} new/updated rows" + (f", newest scan {now - newest:.0f}s ago" if newest else ""))
+        log.info("fmwatcher: poll #%d read %s (mtime %s): %d new/updated listings%s", self.polls, path,
+                 time.strftime("%H:%M:%S", time.localtime(m)), len(rows),
+                 f", newest {now - newest:.0f}s ago" if newest else "")
+        return rows
 
-    def _idle(self, mtime: float) -> None:
+    def _idle(self, mtime: float) -> list[Listing]:
+        """File unchanged since the last read: still ONLINE (the scanner just has nothing new), STALE after 10 min."""
         age = time.time() - mtime
         if age > 600:
-            self._set_status(SourceStatus.STALE, f"FM Watcher file not updated for {age/60:.0f} min — is it running and are you in the FM?")
+            self._set_status(SourceStatus.STALE, f"{self.file_used} not updated for {age/60:.0f} min — is FM Watcher running and are you in the FM?")
+        else:
+            self.mark_success(age, 0)
+            self.health.detail = f"reading {self.file_used}; no new scans in the last {age:.0f}s"
+        if self.polls % 60 == 0:
+            log.info("fmwatcher: %s unchanged for %.0fs (status %s)", self.file_used, age, self.health.status.value)
+        return []
 
     def online_detail(self) -> str:
         return f"reading {self.file_used}" if self.file_used else ""
 
     def stale_after_s(self) -> float:
-        return 900.0
+        return 600.0

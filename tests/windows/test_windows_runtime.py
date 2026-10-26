@@ -266,3 +266,34 @@ def test_automatic_alert_from_scanner_thread_reaches_qt_audio_on_gui_thread(qapp
     for _ in range(25):
         qapp.processEvents(); time.sleep(0.02)
     print(f"AUDIO-THREAD: effect status={eff.status()} isPlaying={eff.isPlaying()} (physical output {'present' if outputs else 'NOT VERIFIED - no device'})")
+
+
+def test_fmwatcher_real_sample_goes_online_in_the_engine_on_windows(tmp_path):
+    """Windows path handling (backslashes, mtime granularity): the user's real watcher_data_v2.json must take the
+    FM Watcher source from STARTING to ONLINE and ingest its rows."""
+    import shutil
+    from pathlib import Path
+
+    from maple_flip_hunter.adapters.fmwatcher import FMWatcherAdapter
+    from maple_flip_hunter.collector.engine import MarketEngine
+    from maple_flip_hunter.config import Settings
+    from maple_flip_hunter.db import Database
+    from maple_flip_hunter.models import SourceStatus
+    from maple_flip_hunter.notifications import Notifier, ensure_sounds
+
+    fm = tmp_path / "FMWatcher" / "FMWatcher"
+    fm.mkdir(parents=True)
+    shutil.copy(Path(__file__).resolve().parents[1] / "fixtures" / "fmwatcher_real_sample.json", fm / "watcher_data_v2.json")
+    s = Settings(source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(fm),
+                 source_fmwatcher_max_age_s=10 * 365 * 86400)
+    eng = MarketEngine(s, Database(":memory:"), Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path)))
+    eng.start()
+    try:
+        fmw = next(a for a in eng.adapters if isinstance(a, FMWatcherAdapter))
+        t0 = time.time()
+        while time.time() - t0 < 10 and fmw.health.status == SourceStatus.STARTING:
+            time.sleep(0.05)
+        print("FMWATCHER:", fmw.health.status.value, fmw.health.detail)
+        assert fmw.health.status == SourceStatus.ONLINE and eng.metrics.listings_ingested >= 20
+    finally:
+        eng.stop()

@@ -89,7 +89,7 @@ def test_csv_export_fallback(tmp_path):
     assert {r.seller for r in rows} == {"NoobTrader", "Armsdealer"}
     assert rows[0].channel == 7 and rows[0].fm_room == 3 and abs(rows[0].source_seen_at - (now - 120)) < 61
     assert any(r.stats == {"watk": 10, "slots": 3} for r in rows)
-    assert "export.bat" in a.health.detail
+    assert "my_scans.csv" in a.health.detail and a.health.status == SourceStatus.ONLINE
 
 
 def test_missing_folder_and_unset_folder_are_reported_not_fatal(tmp_path):
@@ -144,3 +144,58 @@ def test_own_scan_feeds_detection_sound_and_dedupes_against_msw(tmp_path):
     # maplestory.watch adapter is untouched by the new source
     msw = next(a for a in eng.adapters if isinstance(a, MapleStoryWatchAdapter))
     assert msw.interval_s == s.source_msw_interval_s
+
+
+def test_real_home_file_goes_online_with_rows_and_status(tmp_path):
+    """Regression for 'FM Watcher stuck on STARTING': a real watcher_data_v2.json from the user's PC
+    (Kerning City shops, channel 35) must be read, reported ONLINE, and each row carries price + location."""
+    import shutil
+    from pathlib import Path
+
+    from maple_flip_hunter.adapters.fmwatcher import _room_text
+
+    shutil.copy(Path(__file__).resolve().parents[1] / "fixtures" / "fmwatcher_real_sample.json", tmp_path / "watcher_data_v2.json")
+    a = FMWatcherAdapter(directory=str(tmp_path), max_age_s=10 * 365 * 86400)     # the sample is from 2026-10-26
+    rows = run(a.poll())
+    assert a.health.status == SourceStatus.ONLINE, (a.health.status, a.health.detail)
+    assert "reading watcher_data_v2.json" in a.health.detail and "new/updated rows" in a.health.detail
+    assert len(rows) >= 20
+    king = [r for r in rows if r.seller == "TheKingDavid"]
+    assert king and all(r.channel == 35 and r.price > 0 for r in king)
+    assert all(r.map_name == "Kerning City Construction Site" and r.fm_room is None for r in king)
+    viper = next(r for r in king if r.item_name == "Red Viper" and r.price == 79_999)
+    assert viper.stats == {"att": 55, "slots": 7} and viper.category == "Equip"
+    sold = [r for r in rows if r.sold]
+    assert any(r.item_name == "Mithril Pole Arm" for r in sold)
+    assert _room_text("erning City Construction Site") == "Kerning City Construction Site" and _room_text("FM3") == "FM3"
+    # unchanged file on the next poll: still ONLINE (not STARTING, not STALE while the file is fresh)
+    import os
+    os.utime(tmp_path / "watcher_data_v2.json", None)
+    a._store_mtime = os.path.getmtime(tmp_path / "watcher_data_v2.json")
+    assert run(a.poll()) == [] and a.health.status == SourceStatus.ONLINE
+
+
+def test_adapter_is_registered_and_polls_after_settings_save(tmp_path):
+    """Settings save -> engine restart -> the FM Watcher adapter exists, runs, and leaves STARTING."""
+    import shutil
+    from pathlib import Path
+
+    fm = tmp_path / "FMWatcher"
+    fm.mkdir()
+    shutil.copy(Path(__file__).resolve().parents[1] / "fixtures" / "fmwatcher_real_sample.json", fm / "watcher_data_v2.json")
+    s = Settings(source_cozy_enabled=False, source_msw_enabled=False)                 # no folder yet
+    n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
+    eng = MarketEngine(s, Database(":memory:"), n)
+    assert not any(isinstance(a, FMWatcherAdapter) for a in eng.adapters)
+    new = s.model_copy(update={"source_fmwatcher_dir": str(fm), "source_fmwatcher_max_age_s": 10 * 365 * 86400})
+    eng.update_settings(new)
+    eng.start()                                           # what MainWindow does after a source_* change
+    try:
+        fmw = next(a for a in eng.adapters if isinstance(a, FMWatcherAdapter))
+        t0 = time.time()
+        while time.time() - t0 < 10 and fmw.health.status == SourceStatus.STARTING:
+            time.sleep(0.05)
+        assert fmw.health.status == SourceStatus.ONLINE, fmw.health.detail
+        assert eng.metrics.listings_ingested >= 20 and eng.scanner_state in ("LIVE", "DEGRADED")
+    finally:
+        eng.stop()
