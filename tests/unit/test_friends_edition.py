@@ -105,3 +105,32 @@ def test_binary_check_refuses_local_or_placeholder_server(tmp_path, monkeypatch)
     cfg = {"server": "https://license.mydomain.net", "public_key": "ab" * 32}
     exe.write_bytes(b"MZ ... http://127.0.0.1:8797 ...")        # CI leftover inside the binary
     assert chk.main(str(exe)) == 1
+
+
+def test_binary_check_accepts_workers_dev_and_offline_grace_label(tmp_path, monkeypatch):
+    import check_friends_binary as chk
+
+    cfg = {"server": "https://mfh-license.someone.workers.dev", "public_key": "ab" * 32}
+    monkeypatch.setattr(chk, "bundled_files", lambda _e: {"friends_config.json": json.dumps(cfg).encode(), "_edition.txt": b"friends"})
+    exe = tmp_path / "x.exe"
+    exe.write_bytes(b"MZ clean")
+    assert chk.main(str(exe)) == 0
+    from maple_flip_hunter.licensing.client import LicenseState
+    st = LicenseState("licensed", None, None, "ok", False, "lifetime", grace_left_s=3 * 3600 + 120)
+    assert "unreachable" in st.remaining_text and "3 h 2 min" in st.remaining_text
+    assert LicenseState("expired", None, 0, "x", True, "revoked").remaining_text == "Licence revoked"
+
+
+def test_worker_canonical_json_matches_python():
+    """The Worker signs canonical(payload); Python verifies manifests by re-serialising the same way."""
+    import subprocess, shutil
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node not installed")
+    src = (ROOT / "server" / "cloudflare" / "worker.js").read_text(encoding="utf-8")
+    start = src.index("function canonical")
+    end = src.index("\n}\n", start) + 3
+    payload = {"version": "0.13.0", "url": "https://x.workers.dev/a?b=1&c=ä", "sha256": "ab" * 32, "published": 1761500000}
+    js = src[start:end] + f"\nprocess.stdout.write(canonical({json.dumps(payload)}));"
+    out = subprocess.run([node, "-e", js], capture_output=True, text=True, check=True).stdout
+    assert out == json.dumps(payload, separators=(",", ":"), sort_keys=True)

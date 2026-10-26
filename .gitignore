@@ -16,3 +16,7 @@ server/public_key.txt
 server/backups/
 server/update_manifest.json
 *.pfx
+server/cf_admin.json
+server/cloudflare/.dev.vars
+server/cloudflare/.wrangler/
+server/cloudflare/node_modules/

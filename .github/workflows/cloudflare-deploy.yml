@@ -1,0 +1,104 @@
+name: Deploy licence server (Cloudflare free) + build Friends EXE
+
+# Zero-cost path: Cloudflare Workers + D1 free plan, HTTPS on <name>.workers.dev (no domain). Run manually.
+# One-time setup by the owner (docs/CLOUDFLARE_FREE_SETUP_HE.md): free Cloudflare account, workers.dev subdomain,
+# an API token, and three GitHub repository secrets:
+#   CLOUDFLARE_API_TOKEN   (template "Edit Cloudflare Workers" + D1:Edit)
+#   CLOUDFLARE_ACCOUNT_ID
+#   MFH_ADMIN_TOKEN        (any long random string you invent; it is what server/cf_admin.py uses)
+# The Ed25519 private key is generated HERE on first deploy, stored only as a Worker secret, never printed or saved.
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      server_url: ${{ steps.url.outputs.server_url }}
+      public_key: ${{ steps.key.outputs.public_key }}
+    defaults:
+      run:
+        working-directory: server/cloudflare
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm install -g wrangler@4 && pip install cryptography
+      - name: Refuse to run without the three secrets
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "missing secret CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "missing secret CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+          test -n "${{ secrets.MFH_ADMIN_TOKEN }}" || { echo "missing secret MFH_ADMIN_TOKEN"; exit 1; }
+      - name: D1 database (create once, reuse afterwards) and schema
+        run: |
+          ID=$(wrangler d1 list --json | python3 -c "import json,sys; print(next((d['uuid'] for d in json.load(sys.stdin) if d['name']=='mfh-licenses'), ''))")
+          if [ -z "$ID" ]; then
+            wrangler d1 create mfh-licenses
+            ID=$(wrangler d1 list --json | python3 -c "import json,sys; print(next(d['uuid'] for d in json.load(sys.stdin) if d['name']=='mfh-licenses'))")
+          fi
+          sed -i "s/REPLACED_BY_DEPLOY/$ID/" wrangler.toml
+          wrangler d1 execute mfh-licenses --remote --file schema.sql
+      - name: Deploy worker
+        id: url
+        run: |
+          wrangler deploy 2>&1 | tee deploy.log
+          URL=$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' deploy.log | head -1)
+          test -n "$URL" || { echo "no workers.dev URL in deploy output — register your free workers.dev subdomain once in the dashboard (Workers & Pages → Overview)"; exit 1; }
+          echo "server_url=$URL" >> "$GITHUB_OUTPUT"
+          echo "deployed: $URL"
+      - name: Secrets — signing key (generated once, never leaves Cloudflare) and admin token
+        id: key
+        run: |
+          HAVE=$(wrangler secret list --format json 2>/dev/null | python3 -c "import json,sys; print(any(s['name']=='LICENSE_PRIVATE_KEY' for s in json.load(sys.stdin)))" || echo False)
+          PUB=$(wrangler d1 execute mfh-licenses --remote --json --command "SELECT v FROM meta WHERE k='public_key'" | python3 -c "import json,sys; r=json.load(sys.stdin)[0]['results']; print(r[0]['v'] if r else '')")
+          if [ "$HAVE" != "True" ] || [ -z "$PUB" ]; then
+            echo "generating a new Ed25519 signing key (first deploy)"
+            python3 - <<'PY' > keypair.txt
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          from cryptography.hazmat.primitives import serialization as s
+          k = Ed25519PrivateKey.generate()
+          print(k.private_bytes(s.Encoding.Raw, s.PrivateFormat.Raw, s.NoEncryption()).hex())
+          print(k.public_key().public_bytes(s.Encoding.Raw, s.PublicFormat.Raw).hex())
+          PY
+            SEED=$(sed -n 1p keypair.txt); PUB=$(sed -n 2p keypair.txt); rm keypair.txt
+            echo "::add-mask::$SEED"
+            printf '%s' "$SEED" | wrangler secret put LICENSE_PRIVATE_KEY
+            wrangler d1 execute mfh-licenses --remote --command "INSERT INTO meta(k,v) VALUES('public_key','$PUB') ON CONFLICT(k) DO UPDATE SET v=excluded.v"
+            unset SEED
+          else
+            echo "signing key already exists — keeping it (friends' tokens stay valid)"
+          fi
+          printf '%s' "${{ secrets.MFH_ADMIN_TOKEN }}" | wrangler secret put ADMIN_TOKEN
+          echo "public_key=$PUB" >> "$GITHUB_OUTPUT"
+          echo "public key: $PUB"
+      - name: Health + token signing + admin auth check against the live server
+        run: |
+          URL="${{ steps.url.outputs.server_url }}"
+          sleep 5
+          curl -fsS "$URL/v1/health" | tee health.json
+          python3 -c "import json; h=json.load(open('health.json')); assert h['ok'] and h['public_key']=='${{ steps.key.outputs.public_key }}', h"
+          # a signed token for a throw-away machine id verifies with the public key; the row is removed afterwards
+          M=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+          curl -fsS -X POST "$URL/v1/status" -H 'content-type: application/json' -d "{\"machine\":\"$M\",\"version\":\"deploy-check\"}" > tok.json
+          pip install -q httpx && PYTHONPATH=../.. python3 -c "
+          import json; from maple_flip_hunter.licensing.tokens import verify, load_public_key
+          t=json.load(open('tok.json')); p=verify(t['token'], load_public_key('${{ steps.key.outputs.public_key }}')); assert p and p['st']=='trial', t; print('token OK:', p['st'], p['kind'])"
+          wrangler d1 execute mfh-licenses --remote --command "DELETE FROM machines WHERE machine='$M'"
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/admin/code" -H 'content-type: application/json' -d '{"days":1}')" = "401"
+          echo "admin endpoint refuses without token: OK"
+
+  friends-exe:
+    needs: deploy
+    uses: ./.github/workflows/friends-release.yml
+    with:
+      server_url: ${{ needs.deploy.outputs.server_url }}
+      public_key: ${{ needs.deploy.outputs.public_key }}
+    secrets: inherit

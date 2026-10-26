@@ -143,6 +143,32 @@ jobs:
           Stop-Process -Id $srv.Id -Force
           Copy-Item dist\MapleFlipHunterFriends.exe reports\MapleFlipHunterFriends-CI-DEMO.exe
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Friends EXE against the Cloudflare Worker running locally (miniflare, no account) — same licence path
+        shell: pwsh
+        run: |
+          npm install -g wrangler@4
+          Push-Location server\cloudflare
+          $seed = python -c "import secrets;print(secrets.token_hex(32))"
+          $pub = python -c "from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey as K; from cryptography.hazmat.primitives import serialization as s; print(K.from_private_bytes(bytes.fromhex('$seed')).public_key().public_bytes(s.Encoding.Raw, s.PublicFormat.Raw).hex())"
+          "LICENSE_PRIVATE_KEY=$seed`nADMIN_TOKEN=ci-admin-token" | Set-Content .dev.vars
+          wrangler d1 execute mfh-licenses --local --file schema.sql
+          wrangler d1 execute mfh-licenses --local --command "INSERT OR REPLACE INTO meta(k,v) VALUES('public_key','$pub')"
+          $wr = Start-Process -FilePath "wrangler.cmd" -ArgumentList "dev","--local","--port","8798" -PassThru -WindowStyle Hidden -RedirectStandardOutput ..\..\reports\wrangler_dev.log -RedirectStandardError ..\..\reports\wrangler_dev.err
+          Pop-Location
+          $ok = $false
+          foreach ($i in 1..40) { try { $h = Invoke-RestMethod http://127.0.0.1:8798/v1/health; if ($h.ok) { $ok = $true; break } } catch { Start-Sleep -Seconds 2 } }
+          if (-not $ok) { Get-Content reports\wrangler_dev.log, reports\wrangler_dev.err; exit 1 }
+          "worker up: $($h | ConvertTo-Json -Compress)"
+          python tools/ci_cf_license_stage.py http://127.0.0.1:8798 ci-admin-token reports -- dist\MapleFlipHunterFriends.exe
+          $rc = $LASTEXITCODE
+          Stop-Process -Id $wr.Id -Force -ErrorAction SilentlyContinue
+          Get-Process -Name node,workerd -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Remove-Item server\cloudflare\.dev.vars -ErrorAction SilentlyContinue
+          if ($rc -ne 0) { Get-Content reports\wrangler_dev.err; exit 1 }
+
       - name: Write verification report and package the home-test build
         shell: pwsh
         run: |

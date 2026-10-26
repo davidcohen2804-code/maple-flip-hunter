@@ -1,0 +1,22 @@
+# Cloudflare Worker for the Maple Flip Hunter Friends Edition licence server. Free plan only:
+# Workers 100,000 requests/day, D1 5M row reads/day + 100k row writes/day + 5 GB — see docs/CLOUDFLARE_FREE_SETUP_HE.md
+name = "mfh-license"
+main = "worker.js"
+compatibility_date = "2025-10-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "mfh-licenses"
+database_id = "REPLACED_BY_DEPLOY"      # the deploy workflow fills this in from `wrangler d1 list`
+
+# per-IP abuse limit (free, part of Workers): 60 requests / 60 s
+[[unsafe.bindings]]
+name = "RL"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 60, period = 60 }
+
+# secrets (never in this file, set with `wrangler secret put`):
+#   LICENSE_PRIVATE_KEY  = 64-hex Ed25519 seed  (signs tokens + update manifests)
+#   ADMIN_TOKEN          = long random string   (Bearer token for /admin/* used by server/cf_admin.py)

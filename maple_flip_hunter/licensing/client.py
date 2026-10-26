@@ -46,11 +46,22 @@ class LicenseState:
     message: str
     online: bool
     kind: str = "trial"               # trial | activation (14-day code) | lifetime
+    grace_left_s: Optional[float] = None   # set while the server is unreachable: how long the cached token still counts
 
     @property
     def remaining_text(self) -> str:
+        base = self._remaining_base()
+        if self.grace_left_s is not None and base:
+            # the server is down or over its free daily quota: say so instead of failing silently
+            h, m = int(self.grace_left_s // 3600), int((self.grace_left_s % 3600) // 60)
+            return f"{base} · ⚠ licence server unreachable — works offline for {h} h {m} min more"
+        return base
+
+    def _remaining_base(self) -> str:
         if self.kind == "lifetime" and self.status == "licensed":
             return "Lifetime licence"
+        if self.kind == "revoked":
+            return "Licence revoked"
         if self.remaining_s is None:
             return ""
         d, h = int(self.remaining_s // 86400), int((self.remaining_s % 86400) // 3600)
@@ -208,7 +219,10 @@ class LicenseClient:
                    "Your 14-day activation has expired.")
             return LicenseState("expired", exp, 0, msg, online, kind)
         remaining = (float(exp) - now) if exp is not None else None
-        return LicenseState(st, exp, remaining, "ok", online, kind)
+        grace = None
+        if not online and self.last_contact and self.last_error:
+            grace = max(0.0, OFFLINE_GRACE_S - (time.time() - self.last_contact))
+        return LicenseState(st, exp, remaining, "ok", online, kind, grace)
 
     def ensure(self) -> LicenseState:
         """Start-up path: refresh from the server (or activate the first time), then decide."""

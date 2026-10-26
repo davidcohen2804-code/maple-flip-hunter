@@ -22,7 +22,8 @@
 * קודים: `python server\license_server.py --code 30` (30 יום; `0` = לכל החיים). קוד תקף למכונה אחת.
 
 ## הקמת השרת ובניית ה-EXE להפצה
-ראה **`docs/LICENSE_SERVER_SETUP_HE.md`** — התקנה ב-VPS עם HTTPS (Caddy), ניהול (`--list/--code/--check/--revoke/--backup`),
+**בחינם (מומלץ):** `docs/CLOUDFLARE_FREE_SETUP_HE.md` — Cloudflare Workers + D1, workflow אחד מפרסם את השרת ובונה את ה-EXE.
+**חלופה בתשלום (VPS):** `docs/LICENSE_SERVER_SETUP_HE.md` — התקנה ב-VPS עם HTTPS (Caddy), ניהול (`--list/--code/--check/--revoke/--backup`),
 בניית ה-EXE דרך GitHub Actions ("Friends Edition release") עם כתובת השרת והמפתח הציבורי, עלויות ומה עדיין חסר.
 בנייה מקומית: `build\windows\build_friends.bat https://license.<domain> <public_key_hex>` ואז
 `python tools\check_friends_binary.py dist\MapleFlipHunterFriends.exe` (חובה: מסרב ל-localhost/placeholder).

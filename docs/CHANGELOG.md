@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.13.0 — 2026-10-26 (licence server on Cloudflare Workers + D1 — zero-cost hosting)
+* `server/cloudflare/worker.js` + `schema.sql` + `wrangler.toml`: the same licence model as the Python reference
+  server (72 h trial, one-time 14-day / lifetime codes bound to one machine, revoke, signed update manifest,
+  Ed25519 tokens the existing client verifies unchanged), on the free plan: HTTPS at `*.workers.dev`, no domain,
+  no VPS. Private key only as a Worker secret. Free-quota care: `last_seen` written at most hourly, request
+  counter in batches, 4 KB body cap, 60 req/min per IP. `/admin/*` behind a Bearer token.
+* `server/cf_admin.py`: code / list / check / revoke / unrevoke / usage (vs the free quota, warns > 80 %) / update.
+* Client: when the server is unreachable (down or over its daily quota) the status bar says so and shows the
+  remaining 24 h offline grace instead of failing silently; "Licence revoked" label.
+* Workflows: `cloudflare-deploy.yml` (D1 + schema, deploy, first-time key generation into the Worker secret,
+  live health/token/admin checks, then builds the Friends EXE against the live URL), `cloudflare-backup.yml`
+  (weekly D1 export as a GitHub artifact), `friends-release.yml` now reusable. Main Windows CI runs the Worker
+  locally (miniflare) and walks the EXE through trial → lock → 14-day → lock → lifetime → revoke
+  (`tools/ci_cf_license_stage.py`).
+* Docs: `docs/CLOUDFLARE_FREE_SETUP_HE.md` (quota maths, what the owner must set up, management, backups).
+* No change to pricing, profit maths or alerts.
+
 ## 0.12.0 — 2026-10-26 (real Friends Edition distribution path)
 * Licence server ready for the internet: `server/deploy/` (install.sh for Ubuntu, systemd unit, Caddyfile for
   automatic HTTPS), binds to 127.0.0.1 behind Caddy, per-IP rate limit (60/min → 429), 4 KB body cap, hourly
