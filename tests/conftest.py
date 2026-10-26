@@ -13,8 +13,28 @@ from maple_flip_hunter.models import Comparable, Listing, MarketEvidence
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def load_fixture(name: str):
-    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+FIXTURE_EPOCH = 1792936312.0      # when the real-site fixtures were captured (2026-10-25)
+
+
+def load_fixture(name: str, shift_to_now: bool = True):
+    """Fixtures hold real timestamps from capture day; shift them so 'seen N hours ago' stays true forever."""
+    data = json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+    if not shift_to_now:
+        return data
+    delta = time.time() - FIXTURE_EPOCH
+
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k in ("seen", "firstSeen", "updatedAt", "seenAt", "ts") and isinstance(v, (int, float)) and v > 1_600_000_000:
+                    o[k] = v + delta
+                else:
+                    walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(data)
+    return data
 
 
 @pytest.fixture

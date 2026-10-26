@@ -37,7 +37,7 @@ class MarketEngine:
         self._adapters_from_settings = adapters is None
         self.adapters: list[BaseAdapter] = adapters if adapters is not None else self._default_adapters()
         self._callbacks: dict[str, list[Callback]] = {k: [] for k in
-                                                      ("listing", "opportunity", "alert", "health", "log", "availability")}
+                                                      ("listing", "opportunity", "alert", "health", "log", "availability", "valued")}
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
         self._tasks: list[asyncio.Task] = []
@@ -259,7 +259,10 @@ class MarketEngine:
                     self._set_availability(old, "REMOVED", lst.source_seen_at, f"seller changed the price to {lst.price:,}", lst.source)
             self.metrics.last_new_listing_at = now
             self._emit("listing", lst, kind)
-            if not self._prefilter(lst):
+            if lst.source == "fmwatcher":
+                if lst.price < 1000:
+                    continue                     # your own scans: value every meaningful row (band gates alerts only)
+            elif not self._prefilter(lst):
                 continue
             try:
                 opp = await self.evaluate(lst)
@@ -351,6 +354,7 @@ class MarketEngine:
         self.metrics.evaluations += 1
         self.metrics.analysis_ms.add(analysis_ms)
         opp = self.detector.classify(lst, valuation, analysis_ms)
+        self._emit("valued", lst, valuation, opp.level)        # every evaluated row (the Physical tab shows all)
         if opp.level == Level.NONE:
             return None
         if opp.level == Level.UNCERTAIN and not self.settings.show_uncertain:

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.2 — 2026-10-26 (Physical Scanner fixes)
+* **Stop Scanning now really stops**: FM Watcher's launcher restarts its watcher child whenever the child exits, so
+  killing the child first let it respawn. Stop now kills the launcher first, then every descendant, then sweeps any
+  process from the folder that survived; it also stops a watcher started separately (same folder) and **pauses the
+  local file ingestion** (source shows `UNAVAILABLE — stopped by you`). Status goes OFFLINE, nothing auto-restarts
+  (the auto-start hook respects the user's Stop). Start Scanning resumes ingestion and starts exactly one tree.
+  Internet sources are untouched. Quit still stops only a watcher the app started.
+* **Market value / Est. profit for every scanned row**: your own scans are valued regardless of the purchase-price
+  band (the band still gates alerts only); the engine now reports every valuation (`valued` event) so rows that are
+  not opportunities still show market value and estimated profit. When there is no price data the cell says why
+  ("no price data: item not in the market index", "not valued: under 1,000 mesos", …) instead of a dash.
+* **Scan activity line** under the status: when the scan file was last written, rows in the last read / this
+  session, the last FM Watcher log line, and an explicit hint when nothing new arrives for 3+ min while scanning.
+* Tests: Start → Stop → Start with no orphan processes and no duplicates, no auto-restart after Stop, valuations for
+  rows above the band, "no price data" reason, new shop → pricing → alert; Windows runtime test for the respawning
+  launcher. Fixture timestamps now shift to "now" (a 24 h window test had aged out). 109 unit tests.
+
+
 ## 0.8.1 — 2026-10-26 (Friends Edition: three licence phases)
 * **Free Trial** 72 h from first activation → **14-Day Activation** (one-time code, 14 days from redemption) →
   **Lifetime Activation** (one-time code, never expires). All by the server's clock; each code is single-use and

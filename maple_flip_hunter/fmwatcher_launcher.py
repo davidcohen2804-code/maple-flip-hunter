@@ -139,32 +139,39 @@ class FMWatcherLauncher:
         log.info("fmwatcher launcher: started %s hidden (pid %d, python %s)", script.name, self.proc.pid, py)
         return True, f"started hidden (pid {self.proc.pid})"
 
-    def stop(self) -> None:
-        """Stop FM Watcher and its children — only if we started it."""
-        if not self.started_by_us or self.proc is None:
-            return
-        try:
-            import psutil
+    @staticmethod
+    def _kill_tree(pid: int) -> None:
+        """Kill launcher.py FIRST (it restarts watcher.py whenever the child exits), then every descendant."""
+        import psutil
 
-            root = psutil.Process(self.proc.pid)
-            procs = root.children(recursive=True) + [root]
-            for p in procs:
-                try:
-                    p.terminate()
-                except Exception:  # noqa: BLE001
-                    pass
-            _gone, alive = psutil.wait_procs(procs, timeout=5)
-            for p in alive:
-                try:
-                    p.kill()
-                except Exception:  # noqa: BLE001
-                    pass
-        except Exception:  # noqa: BLE001
+        try:
+            root = psutil.Process(pid)
+        except psutil.NoSuchProcess:
+            return
+        kids = root.children(recursive=True)
+        for p in [root] + kids:
             try:
-                self.proc.terminate()
+                p.kill()
             except Exception:  # noqa: BLE001
                 pass
-        log.info("fmwatcher launcher: stopped (pid %d)", self.proc.pid)
+        psutil.wait_procs([root] + kids, timeout=5)
+
+    def stop(self, force_external: bool = False) -> None:
+        """Stop FM Watcher and its children. By default only a watcher WE started; `force_external=True`
+        (the Stop Scanning button) also stops one started separately from the same folder."""
+        pids: list[int] = []
+        if self.started_by_us and self.proc is not None:
+            pids.append(self.proc.pid)
+        if force_external:
+            pids += self.external_pids()
+        for pid in pids:
+            self._kill_tree(pid)
+        # orphan sweep: anything from this folder that survived (e.g. a watcher re-spawned mid-kill)
+        if pids or force_external:
+            for pid in self.external_pids():
+                self._kill_tree(pid)
+        if pids:
+            log.info("fmwatcher launcher: stopped (pids %s)", pids)
         self.started_by_us = False
         self.proc = None
         if self._log_fh:

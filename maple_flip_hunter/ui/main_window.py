@@ -71,6 +71,7 @@ class MainWindow(QMainWindow):
         self.bridge.alert.connect(self.on_alert)
         self.bridge.health.connect(self.on_health)
         self.bridge.availability.connect(self.on_availability)
+        self.bridge.valued.connect(lambda lst, val, level: self.physical.on_valued(lst, val, level))
         self.bridge.listing.connect(self.on_listing)
         notifier.toast_callback = None  # toasts are handled from the alert signal on the UI thread
         if not notifier.attach_gui():    # creates the GUI-thread audio proxy so scanner-thread alerts can play
@@ -345,6 +346,8 @@ class MainWindow(QMainWindow):
         s = self.settings
         if not (s.source_fmwatcher_autostart and s.source_fmwatcher_dir.strip()):
             return
+        if getattr(self, "physical", None) is not None and self.physical.stopped_by_user:
+            return                                   # the user pressed Stop Scanning: no automatic restart
         if str(self.fmw_launcher.folder or "") != s.source_fmwatcher_dir.strip():
             self.fmw_launcher.stop()
             self.fmw_launcher = FMWatcherLauncher(s.source_fmwatcher_dir, log_dir())

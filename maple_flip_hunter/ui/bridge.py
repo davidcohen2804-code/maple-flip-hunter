@@ -10,6 +10,7 @@ class EngineBridge(QObject):
     alert = Signal(object, str, str, str)
     health = Signal(object)
     availability = Signal(object, str, str, bool)
+    valued = Signal(object, object, object)
 
     def __init__(self, engine):
         super().__init__()
@@ -17,4 +18,5 @@ class EngineBridge(QObject):
         engine.on("opportunity", lambda opp: self.opportunity.emit(opp))
         engine.on("alert", lambda opp, level, title, body: self.alert.emit(opp, level, title, body))
         engine.on("availability", lambda opp, status, note, changed: self.availability.emit(opp, status, note, changed))
+        engine.on("valued", lambda lst, val, level: self.valued.emit(lst, val, level))
         engine.on("health", lambda h: self.health.emit(h))

@@ -109,3 +109,79 @@ def test_physical_tab_error_when_folder_missing(app, tmp_path):
     w.physical.start_scanning()
     assert w.physical.status_pill.text() == "ERROR" and "folder not set" in w.physical.status_text.text()
     w.tray.hide(); w.close()
+
+
+def test_start_stop_start_no_orphans_no_duplicates_no_autorestart_and_valuations(app, tmp_path, monkeypatch):
+    import psutil
+
+    from maple_flip_hunter.adapters.fmwatcher import FMWatcherAdapter
+
+    monkeypatch.setattr("maple_flip_hunter.fmwatcher_launcher.find_python", lambda: sys.executable)
+    folder = tmp_path / "FMWatcher"
+    _fake_watcher(folder)
+    _write(folder / "watcher_data_v2.json", _store([
+        ("Rich", "Pink Elephant Slippers", 39_999, 1, 1, False, "FM1", 35, None, 5),          # above the 10k band
+        ("NoobTrader", "Hat Accuracy Scroll: Intermediate", 8_000, 1, 1, False, "FM3", 7, None, 5),
+        ("Nobody", "Strange Unknown Thing", 5_000, 1, 1, False, "FM2", 2, None, 5)]))
+    s = Settings(source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(folder),
+                 source_fmwatcher_autostart=True)                                              # defaults: band 2,500–10,000
+    n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
+    played = []
+    real = n.play
+    n.play = lambda sid, volume=None: (played.append(sid), real(sid, volume))  # type: ignore[method-assign]
+    eng = MarketEngine(s, Database(":memory:"), n)
+
+    async def evidence(lst):
+        if "Unknown" in lst.item_name:
+            return None
+        ref = 45_000 if "Slippers" in lst.item_name else 42_000
+        return make_evidence(lst, sold_median=ref, sold_count=40, sales24=6, asks=(int(ref * 1.03), int(ref * 1.05), int(ref * 1.1)))
+    eng.gather_evidence = evidence  # type: ignore[method-assign]
+    w = MainWindow(eng, s, n)
+    w.show(); app.processEvents()
+    tab = w.physical
+    # Start → process + ingestion
+    tab.start_scanning(); app.processEvents()
+    pid1 = w.fmw_launcher.proc.pid
+    t0 = time.time()
+    while time.time() - t0 < 5 and not psutil.Process(pid1).children():
+        time.sleep(0.1)
+    kids1 = [c.pid for c in psutil.Process(pid1).children(recursive=True)]
+    assert kids1 and tab.status_pill.text() == "ONLINE"
+    # Stop → tree gone, ingestion paused, OFFLINE, and the autostart hook must NOT bring it back
+    tab.stop_scanning(); app.processEvents()
+    time.sleep(0.5)
+    assert all(not psutil.pid_exists(p) or psutil.Process(p).status() == psutil.STATUS_ZOMBIE for p in [pid1] + kids1)
+    assert not w.fmw_launcher.external_pids()
+    assert tab.status_pill.text() == "OFFLINE" and tab.btn_start.isEnabled() and not tab.btn_stop.isEnabled()
+    w.autostart_fmwatcher(); app.processEvents()
+    assert w.fmw_launcher.proc is None and tab.status_pill.text() == "OFFLINE"
+    fmw = next(a for a in eng.adapters if isinstance(a, FMWatcherAdapter))
+    assert fmw.paused and asyncio.new_event_loop().run_until_complete(fmw.poll()) == []
+    # Start again → exactly one process tree, ingestion resumes
+    tab.start_scanning(); app.processEvents()
+    pid2 = w.fmw_launcher.proc.pid
+    assert pid2 != pid1 and not fmw.paused and tab.status_pill.text() == "ONLINE"
+    t0 = time.time()
+    while time.time() - t0 < 5 and len(w.fmw_launcher.external_pids()) < 1:
+        time.sleep(0.1)
+    trees = {p for p in w.fmw_launcher.external_pids()}
+    assert all(psutil.Process(p).ppid() == pid2 for p in trees)            # only children of OUR launcher
+    # new shop data → valuations for EVERY row (even above the band), alert only for the qualifying one
+    rows = asyncio.new_event_loop().run_until_complete(fmw.poll())
+    opps = asyncio.new_event_loop().run_until_complete(eng.ingest(rows))
+    for lst in rows:
+        w.on_listing(lst, "new")
+    for o in opps:
+        w.on_opportunity(o)
+    app.processEvents()
+    r_rich = tab.row_for_key(next(l.listing_key for l in rows if l.seller == "Rich"))
+    assert tab.table.item(r_rich, 3).text() == "45,000" and tab.table.item(r_rich, 4).text().startswith("+")
+    r_unk = tab.row_for_key(next(l.listing_key for l in rows if l.seller == "Nobody"))
+    assert "no price data" in tab.table.item(r_unk, 3).text()
+    r_noob = tab.row_for_key(next(l.listing_key for l in rows if l.seller == "NoobTrader"))
+    assert tab.table.item(r_noob, 3).text() == "42,000"
+    assert played and eng.metrics.alerts == 1                             # the 8,000 deal rang; 39,999 is outside the band
+    assert "1 pass your filters" in tab.counter.text()
+    tab.stop_scanning()
+    w.tray.hide(); w.close()

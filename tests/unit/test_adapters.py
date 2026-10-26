@@ -60,7 +60,7 @@ def test_cozy_evidence_filters_competitors_and_sales():
     from tests.conftest import make_listing
 
     lst = make_listing(name="Earring STR Scroll: Intermediate", price=70_000, seller="Kahiel", channel=10, item_id="98", ref=89_999)
-    lst.source_seen_at = 1792936312.432
+    lst.source_seen_at = time.time()
     ev = run(a.fetch_evidence(lst, comp_window_s=10 ** 9))
     assert ev.sold_median == 89_999 and ev.sold_count == 307
     assert ev.secondary_reference == 92_999
@@ -83,7 +83,7 @@ def test_msw_poll_and_evidence():
     assert len(listings) == 1                      # only Angel Halo is >=20% under typical and not sold out
     l = listings[0]
     assert l.item_name == "Angel Halo" and l.price == 120_000 and l.fm_room == 10 and l.channel == 30
-    assert l.source_first_seen_at == 1792926255
+    assert abs(l.source_first_seen_at - (1792926255 + (time.time() - 1792936312.0))) < 5
     ev = run(a.fetch_evidence(l))
     assert ev.sold_median == 185_000 and ev.sold_count == 398 and ev.sold_recent_24h == 132
     assert len(ev.active_asks) == 1                # excludes the candidate itself and the sold-out row

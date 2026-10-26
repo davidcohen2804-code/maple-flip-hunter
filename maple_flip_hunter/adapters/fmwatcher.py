@@ -73,6 +73,10 @@ class FMWatcherAdapter(BaseAdapter):
         self.directory = Path(directory).expanduser() if directory else None
         self.max_age_s = max_age_s
         self.polls = 0
+        self.paused = False                 # Physical Scanner "Stop Scanning": no file reads, status UNAVAILABLE
+        self.last_file_write = 0.0
+        self.rows_last_read = 0
+        self.rows_total_session = 0
         log.info("fmwatcher: adapter created, folder=%s interval=%ss max_age=%ss", self.directory, self.interval_s, max_age_s)
         self._store_mtime = 0.0
         self._csv_mtime = 0.0
@@ -198,6 +202,9 @@ class FMWatcherAdapter(BaseAdapter):
     # ------------------------------------------------------------------ poll
     async def poll(self) -> list[Listing]:
         self.polls += 1
+        if self.paused:
+            self._set_status(SourceStatus.UNAVAILABLE, "stopped by you (Physical Scanner → Stop Scanning)")
+            return []
         store, csv_path = self._paths()
         if store is None:
             self._set_status(SourceStatus.UNSUPPORTED, "FM Watcher folder not set (Settings → Sources)")
@@ -222,6 +229,9 @@ class FMWatcherAdapter(BaseAdapter):
         else:
             raise FetchError(f"neither {STORE_FILE} nor {CSV_FILE} in {self.directory} — is FM Watcher running / exported?")
         self._last_file_mtime = m
+        self.last_file_write = m
+        self.rows_last_read = len(rows)
+        self.rows_total_session += len(rows)
         newest = max((r.source_seen_at for r in rows), default=None)
         now = time.time()
         # file age = how fresh the scanner's last write is; that is what ONLINE/STALE should reflect
@@ -235,6 +245,7 @@ class FMWatcherAdapter(BaseAdapter):
 
     def _idle(self, mtime: float) -> list[Listing]:
         """File unchanged since the last read: still ONLINE (the scanner just has nothing new), STALE after 10 min."""
+        self.last_file_write = mtime
         age = time.time() - mtime
         if age > 600:
             self._set_status(SourceStatus.STALE, f"{self.file_used} not updated for {age/60:.0f} min — is FM Watcher running and are you in the FM?")

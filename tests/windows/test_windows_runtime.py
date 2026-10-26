@@ -334,3 +334,38 @@ def test_fmwatcher_autostart_hidden_on_windows(tmp_path, monkeypatch):
     time.sleep(0.5)
     assert not psutil.pid_exists(pid) and all(not psutil.pid_exists(k) for k in kids)
     print("FMWATCHER-AUTOSTART: hidden start, duplicate prevented, tree stopped")
+
+
+def test_physical_scanner_stop_kills_tree_on_windows(tmp_path, monkeypatch):
+    """Windows: Stop Scanning must leave no FM Watcher process (launcher or watcher child) behind, even though the
+    launcher restarts its child on exit; Start afterwards creates exactly one new tree."""
+    import subprocess
+    import sys
+
+    import psutil
+
+    from maple_flip_hunter.fmwatcher_launcher import FMWatcherLauncher
+
+    folder = tmp_path / "FMWatcher"
+    folder.mkdir()
+    (folder / "watcher.py").write_text("import time\nwhile True:\n    time.sleep(0.2)\n", encoding="utf-8")
+    (folder / "launcher.py").write_text(     # like the real one: restarts watcher.py whenever it exits
+        "import subprocess, sys, os\nwhile True:\n    subprocess.call([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'watcher.py')])\n",
+        encoding="utf-8")
+    monkeypatch.setattr("maple_flip_hunter.fmwatcher_launcher.find_python", lambda: sys.executable)
+    la = FMWatcherLauncher(str(folder), tmp_path / "logs")
+    assert la.start()[0]
+    t0 = time.time()
+    while time.time() - t0 < 5 and not psutil.Process(la.proc.pid).children():
+        time.sleep(0.1)
+    pid = la.proc.pid
+    kids = [c.pid for c in psutil.Process(pid).children(recursive=True)]
+    la.stop(force_external=True)
+    time.sleep(1.0)
+    leftovers = [p for p in [pid] + kids if psutil.pid_exists(p)]
+    assert not leftovers and not la.external_pids(), leftovers
+    assert la.start()[0]
+    time.sleep(1.0)
+    assert len([p for p in psutil.process_iter(["cmdline"]) if "watcher.py" in " ".join(p.info.get("cmdline") or []) and str(folder).lower() in " ".join(p.info.get("cmdline") or []).lower()]) == 1
+    la.stop(force_external=True)
+    print("PHYSICAL-STOP: no orphans, single tree on restart")

@@ -28,6 +28,8 @@ class PhysicalScannerTab(QWidget):
         self.items: dict[str, QTableWidgetItem] = {}   # listing_key -> first-column item (row() survives sorting)
         self.listings: dict[str, Listing] = {}
         self.opps: dict[str, Opportunity] = {}
+        self.vals: dict[str, tuple] = {}       # listing_key -> (Valuation, Level) for every evaluated row
+        self.stopped_by_user = False
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 8, 0, 0)
         root.setSpacing(10)
@@ -66,7 +68,7 @@ class PhysicalScannerTab(QWidget):
         self.table.setSortingEnabled(True)
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(1, QHeaderView.Stretch)
-        for i, w in ((0, 140), (2, 95), (3, 105), (4, 100), (5, 50), (6, 190), (7, 80)):
+        for i, w in ((0, 130), (2, 90), (3, 150), (4, 95), (5, 44), (6, 170), (7, 70)):
             hh.setSectionResizeMode(i, QHeaderView.Fixed)
             self.table.setColumnWidth(i, w)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -78,39 +80,38 @@ class PhysicalScannerTab(QWidget):
         self.load_history()
 
     # ------------------------------------------------------------ process control
+    def _adapter(self):
+        return next((a for a in self.win.engine.adapters if a.name == "fmwatcher"), None)
+
     def start_scanning(self) -> None:
         s = self.win.settings
         if not s.source_fmwatcher_dir.strip():
             self.set_status("ERROR", "FM Watcher folder not set — Settings → Sources → FM Watcher folder")
             return
-        ok, msg = self.win.fmw_launcher.start()
+        self.stopped_by_user = False
+        ok, msg = self.win.fmw_launcher.start()        # never a second copy (checks ours + external)
         if not ok:
             self.set_status("ERROR", msg)
             return
-        if not any(a.name == "fmwatcher" for a in self.win.engine.adapters) and self.win.engine.running:
-            self.win.engine.stop()            # the adapter is built from settings at start
+        a = self._adapter()
+        if a is not None:
+            a.paused = False                            # resume reading the scan file
+        elif self.win.engine.running:
+            self.win.engine.stop()                      # adapter is built from settings at start
             self.win.engine.start()
         self.refresh_status()
 
     def stop_scanning(self) -> None:
-        """Stops the physical scan only (FM Watcher process); internet sources keep running."""
+        """Stops the physical scan only: FM Watcher process (ours or started separately) AND the local file
+        ingestion. Internet sources keep running; nothing restarts automatically."""
+        self.stopped_by_user = True
         la = self.win.fmw_launcher
-        if la.started_by_us:
-            la.stop()
-        else:
-            ext = la.external_pids()
-            if ext:
-                try:
-                    import psutil
-
-                    for pid in ext:
-                        p = psutil.Process(pid)
-                        for c in p.children(recursive=True):
-                            c.terminate()
-                        p.terminate()
-                except Exception:  # noqa: BLE001
-                    pass
+        la.stop(force_external=True)
         la.error = ""
+        a = self._adapter()
+        if a is not None:
+            a.paused = True
+            a._set_status(SourceStatus.UNAVAILABLE, "stopped by you (Physical Scanner → Stop Scanning)")
         self.refresh_status()
 
     def set_status(self, state: str, text: str) -> None:
@@ -119,24 +120,59 @@ class PhysicalScannerTab(QWidget):
         self.status_pill.setStyleSheet(f"background:{color}22; color:{color}; border:1px solid {color};")
         self.status_text.setText(text)
 
+    def _activity_text(self, adapter) -> str:
+        """Distinguish 'running, nothing new' from 'stuck': last file write, rows in the last read, watcher.log tail."""
+        if adapter is None:
+            return ""
+        parts = []
+        if adapter.last_file_write:
+            age = time.time() - adapter.last_file_write
+            parts.append(f"scan file written {fmt_age(age)} ago")
+        parts.append(f"{adapter.rows_last_read} rows in the last read · {adapter.rows_total_session} this session")
+        tail = self._watcher_log_tail()
+        if tail:
+            parts.append(f"FM Watcher: “{tail}”")
+        if adapter.last_file_write and time.time() - adapter.last_file_write > 180:
+            parts.append("no new scans for 3+ min — if you are opening shops now, FM Watcher is not reading the game "
+                         "(is the game window visible? did you open Change Channel once?)")
+        return " · ".join(parts)
+
+    def _watcher_log_tail(self) -> str:
+        folder = self.win.settings.source_fmwatcher_dir.strip()
+        if not folder:
+            return ""
+        try:
+            import os
+
+            p = os.path.join(folder, "watcher.log")
+            with open(p, "rb") as f:
+                f.seek(0, 2)
+                f.seek(max(0, f.tell() - 4000))
+                lines = [ln.strip() for ln in f.read().decode("utf-8", "replace").splitlines() if ln.strip()]
+            return lines[-1][:160] if lines else ""
+        except OSError:
+            return ""
+
     def refresh_status(self) -> None:
         state, text = self.win.fmw_launcher.status()
-        adapter = next((a for a in self.win.engine.adapters if a.name == "fmwatcher"), None)
+        adapter = self._adapter()
         if state == "error":
             self.set_status("ERROR", text)
-        elif state == "running":
-            detail = f" · {adapter.health.detail}" if adapter and adapter.health.detail else ""
-            if adapter and adapter.health.status in (SourceStatus.ONLINE, SourceStatus.STARTING):
-                self.set_status("ONLINE", text + detail)
-            elif adapter is None:
+        elif state == "running" and not self.stopped_by_user:
+            act = self._activity_text(adapter)
+            if adapter is None:
                 self.set_status("ONLINE", text + " · adapter starts with the scanner (Settings → Sources → FM Watcher folder)")
+            elif adapter.health.status in (SourceStatus.ONLINE, SourceStatus.STARTING):
+                self.set_status("ONLINE", f"{text}\n{act}")
             else:
-                self.set_status("ONLINE", f"{text} · {adapter.health.status.value}{detail}")
+                self.set_status("ONLINE", f"{text} · {adapter.health.status.value}: {adapter.health.detail}\n{act}")
+        elif state == "running" and self.stopped_by_user:
+            self.set_status("OFFLINE", "FM Watcher is still running (could not be stopped) — close its process manually")
         else:
             self.set_status("OFFLINE", text if not self.win.settings.source_fmwatcher_dir.strip()
                             else text + " — press Start Scanning")
-        self.btn_start.setEnabled(state != "running")
-        self.btn_stop.setEnabled(state == "running")
+        self.btn_start.setEnabled(state != "running" or self.stopped_by_user)
+        self.btn_stop.setEnabled(state == "running" and not self.stopped_by_user)
 
     # ------------------------------------------------------------ rows
     def load_history(self) -> None:
@@ -154,6 +190,26 @@ class PhysicalScannerTab(QWidget):
         if opp.listing.source == "fmwatcher":
             self.opps[opp.key] = opp
             self.upsert(opp.listing)
+
+    def on_valued(self, lst: Listing, valuation, level) -> None:
+        if lst.source == "fmwatcher":
+            self.vals[lst.listing_key] = (valuation, level)
+            self.upsert(lst)
+
+    def _no_price_reason(self, lst: Listing) -> str:
+        v = self.vals.get(lst.listing_key)
+        if v is not None and v[0].reference:
+            return ""
+        if v is not None:
+            risks = v[0].risks + v[0].explanation
+            if any("Unknown item" in r or "no reference" in r.lower() for r in risks):
+                return "no price data: item not in the market index"
+            return (risks[0][:60] if risks else "no reference price")
+        if lst.price < 1000:
+            return "not valued: under 1,000 mesos"
+        if not self.win.engine.running:
+            return "scanner stopped"
+        return "valuing…"
 
     def _qualifies(self, opp: Optional[Opportunity]) -> bool:
         if opp is None or opp.level not in (Level.JACKPOT, Level.GOOD) or opp.stale or opp.gone:
@@ -178,8 +234,9 @@ class PhysicalScannerTab(QWidget):
                 if gone:
                     self.items.pop(gone, None)
                     self.listings.pop(gone, None)
-        v = opp.valuation if opp else None
-        vals = [lst.seller, lst.item_name, f"{lst.price:,}", f"{v.reference:,}" if v and v.reference else "—",
+        v = opp.valuation if opp else (self.vals[key][0] if key in self.vals else None)
+        reason = self._no_price_reason(lst) if not (v and v.reference) else ""
+        vals = [lst.seller, lst.item_name, f"{lst.price:,}", f"{v.reference:,}" if v and v.reference else (reason or "—"),
                 f"{v.net_profit:+,}" if v and v.net_profit is not None else "—",
                 str(lst.channel) if lst.channel else "?", lst.map_name or lst.location, fmt_age(max(0.0, time.time() - lst.source_seen_at))]
         good = self._qualifies(opp)
@@ -191,6 +248,9 @@ class PhysicalScannerTab(QWidget):
                 it.setData(Qt.UserRole, lst.price)
             if c == 4 and v and v.net_profit is not None:
                 it.setForeground(QBrush(QColor(GREEN if v.net_profit > 0 else RED)))
+            if c == 3 and reason:
+                it.setForeground(QBrush(QColor(MUTED)))
+                it.setToolTip(reason)
             if c == 7:
                 it.setData(Qt.UserRole, -lst.source_seen_at)
             if good:
@@ -201,6 +261,8 @@ class PhysicalScannerTab(QWidget):
                 it.setForeground(QBrush(QColor(MUTED)))
             if opp:
                 it.setToolTip("\n".join([f"{opp.level.value} · {opp.availability}"] + v.explanation + opp.reasons))
+            elif v is not None and c != 3:
+                it.setToolTip("\n".join(v.explanation + [f"risk: {r}" for r in v.risks]) or "valued: not an opportunity")
             self.table.setItem(r, c, it)
             if c == 0:
                 self.items[key] = it
