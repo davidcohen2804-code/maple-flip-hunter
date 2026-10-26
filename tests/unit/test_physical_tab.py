@@ -59,7 +59,7 @@ def test_physical_tab_start_stop_table_and_history(app, tmp_path, monkeypatch):
     eng.gather_evidence = evidence  # type: ignore[method-assign]
     w = MainWindow(eng, s, n)
     w.show(); app.processEvents()
-    assert w.tabs.count() == 2 and w.tabs.tabText(1) == "Physical Scanner"
+    assert w.tabs.count() == 3 and w.tabs.tabText(1) == "Physical Scanner"
     tab = w.physical
     tab.refresh_status()
     assert tab.status_pill.text() == "OFFLINE" and tab.btn_start.isEnabled() and not tab.btn_stop.isEnabled()

@@ -10,6 +10,8 @@ dependencies = [
     "pydantic>=2.6",
     "psutil>=5.9",
     "cryptography>=42",
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
 ]
 
 [project.optional-dependencies]

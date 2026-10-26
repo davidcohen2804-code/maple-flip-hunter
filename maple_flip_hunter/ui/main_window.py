@@ -22,6 +22,8 @@ from ..fmwatcher_launcher import FMWatcherLauncher
 from ..paths import log_dir
 from .alert_popup import AlertPopup
 from .physical_tab import PhysicalScannerTab
+from .spots_tab import SpotsTab
+from .alert_popup import SpotPopup
 from .watchdog import UiWatchdog
 from .health_dialog import HealthDialog
 from .flow_layout import FlowLayout
@@ -262,6 +264,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(central, "Market")
         self.physical = PhysicalScannerTab(self)
         self.tabs.addTab(self.physical, "Physical Scanner")
+        self.spots = SpotsTab(self)
+        self.tabs.addTab(self.spots, "Free Spot Detector")
         self.setCentralWidget(self.tabs)
         self.status = self.statusBar()
         self.status.showMessage("Ready. Press Start scanner.")
@@ -458,6 +462,8 @@ class MainWindow(QMainWindow):
     def quit_app(self) -> None:
         self._quitting = True
         self.save_layout()
+        if getattr(self, "spots", None) is not None and self.spots.monitor is not None:
+            self.spots.monitor.stop()
         self.fmw_launcher.stop()                  # only stops a watcher WE started
         self.engine.stop()
         QApplication.instance().quit()
@@ -586,6 +592,15 @@ class MainWindow(QMainWindow):
         sel = self._selected()
         if sel is not None and sel.key == opp.key:
             self.details.setHtml(self.details_html(opp))
+
+    def on_spot_alert(self, ev) -> None:
+        """Free Spot Detector alert: distinct doorbell sound (profit bands do not apply) + floating card."""
+        self.notifier.play(self.settings.spots_sound or "spot")
+        log.info("SPOT_ALERT %s %s conf=%.2f", ev.spot.rating, ev.spot.location_text(), ev.confidence)
+        pop = SpotPopup(ev, on_mute=lambda: self.notifier.mute_for(60))
+        pop.show_stacked()
+        if hasattr(self, "tray"):
+            self.tray.showMessage(f"{ev.spot.rating} SPOT AVAILABLE", ev.spot.location_text(), QSystemTrayIcon.Critical, 15000)
 
     def on_health(self, health: list[SourceHealth]) -> None:
         self._refresh_stats(health)

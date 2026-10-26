@@ -126,3 +126,83 @@ class AlertPopup(QWidget):
     @classmethod
     def open_count(cls) -> int:
         return len(cls._open)
+
+
+class SpotPopup(QWidget):
+    """'PRIME SPOT AVAILABLE' card: map / room / channel, approximate position, when it freed up, confidence,
+    and the screenshot of the moment. Stays until OK."""
+
+    def __init__(self, ev, on_mute=None, parent=None) -> None:
+        super().__init__(parent)
+        self.ev = ev
+        spot = ev.spot
+        self.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.WindowDoesNotAcceptFocus)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_DeleteOnClose, True)
+        self.setFixedWidth(460)
+        color = ACCENT if spot.rating == "GOOD" else "#f85149"
+        self.setStyleSheet(f"QWidget {{ background: {PANEL}; color: {TEXT}; font-family: 'Segoe UI', Arial; font-size: 13px; }}"
+                           f"QWidget#card {{ border: 2px solid {color}; border-radius: 10px; }}"
+                           f"QLabel#head {{ color: {color}; font-size: 18px; font-weight: 800; }}"
+                           f"QLabel#muted {{ color: {MUTED}; }}"
+                           f"QPushButton {{ background: #1f2733; border: 1px solid {BORDER}; border-radius: 6px; padding: 8px 14px; }}"
+                           f"QPushButton#ok {{ background: {color}; color: #0f1419; font-weight: 700; }}")
+        card = QWidget(self)
+        card.setObjectName("card")
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(card)
+        v = QVBoxLayout(card)
+        v.setContentsMargins(18, 16, 18, 16)
+        v.setSpacing(8)
+        head = QLabel(f"{spot.rating} SPOT AVAILABLE")
+        head.setObjectName("head")
+        v.addWidget(head)
+        v.addWidget(QLabel(f"📍 <b>{html.escape(spot.location_text())}</b> · position ≈ ({spot.x}, {spot.y}) on screen"))
+        meta = QLabel(f"freed up at {time.strftime('%H:%M:%S', time.localtime(ev.at))} · detection confidence {ev.confidence:.0%}"
+                      + (f" · vacated {spot.vacate_count}× so far" if spot.vacate_count > 1 else ""))
+        meta.setObjectName("muted")
+        meta.setWordWrap(True)
+        v.addWidget(meta)
+        if ev.screenshot is not None:
+            try:
+                import numpy as np
+                from PySide6.QtGui import QImage, QPixmap
+
+                fr = ev.screenshot
+                h, w = fr.shape[:2]
+                rgb = np.ascontiguousarray(fr[..., ::-1])
+                img = QImage(rgb.data, w, h, 3 * w, QImage.Format_RGB888).copy()
+                shot = QLabel()
+                shot.setPixmap(QPixmap.fromImage(img).scaledToWidth(420, Qt.SmoothTransformation))
+                v.addWidget(shot)
+            except Exception:  # noqa: BLE001
+                pass
+        row = QHBoxLayout()
+        self.btn_mute = QPushButton("🔇 Mute")
+        self.btn_mute.clicked.connect(lambda: on_mute() if on_mute else None)
+        self.btn_ok = QPushButton("OK")
+        self.btn_ok.setObjectName("ok")
+        self.btn_ok.clicked.connect(self.close)
+        row.addWidget(self.btn_mute)
+        row.addStretch(1)
+        row.addWidget(self.btn_ok)
+        v.addLayout(row)
+
+    def show_stacked(self) -> None:
+        AlertPopup._open.append(self)  # type: ignore[arg-type]
+        self.adjustSize()
+        scr = QGuiApplication.primaryScreen()
+        geo = scr.availableGeometry() if scr else None
+        if geo is not None:
+            y = geo.top() + 24
+            for p in AlertPopup._open[:-1]:
+                y += p.height() + 10
+            self.move(geo.right() - self.width() - 24, y)
+        self.show()
+        self.raise_()
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        if self in AlertPopup._open:
+            AlertPopup._open.remove(self)  # type: ignore[arg-type]
+        super().closeEvent(event)

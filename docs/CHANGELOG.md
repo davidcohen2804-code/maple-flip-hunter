@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.0 — 2026-10-26 (Free Spot Detector — infrastructure + verified detection)
+* New tab **Free Spot Detector**: Start/Stop Monitoring (own background thread, bounded fps), ONLINE/OFFLINE/ERROR,
+  scope (map, FM room, channel, channels to watch incl. ranges), alert set (PRIME default, +GOOD), live view with
+  spots drawn (click → mark PRIME/GOOD/NORMAL or remove; saved), spot table (state, last seen, vacated ×, avg
+  occupied / retake when enough observations), heat overlay from real vacancy counts, history, PRIME/GOOD/NORMAL filter.
+* Vision (`spots/vision.py`, OpenCV): hired-merchant huts detected by red star + white skirt + orange cap —
+  13/13 on the GMS FM1 reference, 14 on the dense KMS one, 0 false positives on the bare Kerning map; UI panels
+  (shop window etc.) detected as occlusion against a reference frame; camera scroll measured by phase correlation;
+  map identity from the minimap corner.
+* State machine (`spots/monitor.py`): FREE only after OCCUPIED → not seen for ≥ 20 s over ≥ 8 clean frames on a
+  still camera, same map, no panel over it; a hut returning cancels; one alert per vacancy (5 min cooldown),
+  only for rated spots inside the chosen scope. Alert = distinct doorbell sound (not the profit bands) + floating
+  "PRIME SPOT AVAILABLE" card with location, time, confidence and screenshot.
+* Persistence: `spots` / `spot_events` tables in the main database (ratings, stats, history survive restarts).
+* Not yet calibrated with continuous captures from the user's own PC (see docs/FREE_SPOT_DETECTOR_HE.md).
+  127 unit tests. Market/Physical scanners, alerts, Friends Edition and licensing unchanged.
+
+
 ## 0.9.0 — 2026-10-26 (Scanner Health · Deal Confidence 0–100)
 * **Scanner Health** (🩺 Health button): per-source status ONLINE / IDLE / STALE / ERROR / OFFLINE-type states with
   last update, latency, rows, error count, detail, the last 20 errors (newest last), UI stalls and process RSS/CPU;

@@ -108,6 +108,15 @@ def harp_samples() -> list[int]:
     return _finish(s, 0.75)
 
 
+def spot_samples() -> list[int]:
+    """Free Spot Detector: a distinct "doorbell" — two descending notes then a bright third. ~1.4 s."""
+    s: list[float] = []
+    s = _mix(s, _bell(E6, 0.45, 0.6), 0.0)
+    s = _mix(s, _bell(C6, 0.55, 0.6), 0.25)
+    s = _mix(s, _bell(G6, 0.7, 0.55), 0.6)
+    return _finish(s, 0.74)
+
+
 def soft_samples() -> list[int]:
     """Very quiet single low note, used for UNCERTAIN previews / tests. ~0.5 s."""
     return _finish(_bell(A4, 0.5, 0.4), 0.4)
@@ -121,6 +130,7 @@ SOUND_LIBRARY: dict[str, tuple[str, Callable[[], list[int]], str]] = {
     "chime": ("chime_v2.wav", chime_samples, "Two-note chime"),
     "harp": ("harp_v2.wav", harp_samples, "Harp run"),
     "soft": ("soft_v2.wav", soft_samples, "Soft single note (quiet)"),
+    "spot": ("spot_v2.wav", spot_samples, "Doorbell (free spot)"),
 }
 
 # backwards-compatible level names (Test alarm button, old call sites)

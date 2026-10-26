@@ -140,6 +140,17 @@ class Settings(BaseModel):
     retention_events_days: int = 30
     retention_notifications_days: int = 30
 
+    # --- Free Spot Detector ----------------------------------------------
+    spots_map_name: str = Field("Free Market", description="Map being monitored (as you name it)")
+    spots_room: int | None = Field(None, description="FM room number (None for town maps)")
+    spots_channel: int | None = Field(None, description="Channel you are on")
+    spots_alert_ratings: list[str] = Field(default_factory=lambda: ["PRIME"])
+    spots_fps: float = Field(1.0, ge=0.2, le=4.0)
+    spots_vacate_confirm_s: float = Field(20.0, ge=5.0)
+    spots_scopes: list[dict] = Field(default_factory=list, description="[{map, room, channels:[...], enabled}] — empty = everything")
+    spots_sound: str = "spot"
+    spots_capture_rect: list[int] = Field(default_factory=list, description="[x, y, w, h] screen rectangle of the game window; empty = whole primary screen")
+
     # --- UI memory ------------------------------------------------------
     ui_settings_dialog_geometry: str = Field("", description="base64 QWidget.saveGeometry() of the Settings window")
     ui_main_window_geometry: str = Field("", description="base64 saveGeometry() of the main window (incl. maximized state)")

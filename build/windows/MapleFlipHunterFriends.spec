@@ -12,7 +12,7 @@ if os.path.exists(os.path.join(PKG, "friends_config.json")):
 
 a = Analysis(
     [os.path.join(ROOT, "run_app.py")], pathex=[ROOT], binaries=[], datas=datas,
-    hiddenimports=collect_submodules("maple_flip_hunter") + ["PySide6.QtMultimedia", "PySide6.QtNetwork"],
+    hiddenimports=collect_submodules("maple_flip_hunter") + ["PySide6.QtMultimedia", "PySide6.QtNetwork", "cv2", "numpy"],
     hookspath=[], runtime_hooks=[],
     excludes=["PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore", "PySide6.QtQuick",
               "PySide6.QtQml", "PySide6.QtCharts", "PySide6.QtDataVisualization", "PySide6.QtPdf", "tkinter"],
