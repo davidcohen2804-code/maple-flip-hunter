@@ -41,7 +41,7 @@ _REG = {}
 def _client(server, tmp_path, name="a"):
     """One isolated registry key per test (on Windows the HKCU copy is what survives reinstalls)."""
     url, pub = server
-    key = _REG.setdefault(str(tmp_path), r"Software\MFHTest\" + uuid.uuid4().hex)
+    key = _REG.setdefault(str(tmp_path), "Software\\MFHTest\\" + uuid.uuid4().hex)
     return LicenseClient(server=url, public_key=pub, state_file=tmp_path / f"{name}.json", registry_key=key)
 
 

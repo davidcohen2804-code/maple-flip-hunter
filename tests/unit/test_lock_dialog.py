@@ -32,7 +32,7 @@ def test_lock_dialog_message_copy_and_activation(app, tmp_path, monkeypatch):
     try:
         url = f"http://127.0.0.1:{s.server_address[1]}"
         c = LicenseClient(server=url, public_key=(tmp_path / "pub.txt").read_text().strip(),
-                          state_file=tmp_path / "st.json", registry_key=r"Software\MFHTest\lock_" + __import__("uuid").uuid4().hex)
+                          state_file=tmp_path / "st.json", registry_key="Software\\MFHTest\\lock_" + __import__("uuid").uuid4().hex)
         c.ensure()
         real = srv.time.time
         monkeypatch.setattr(srv.time, "time", lambda: real() + 73 * 3600)
