@@ -240,6 +240,29 @@ class Database:
         row = self._exec("SELECT notified_at FROM opportunities WHERE listing_key=?", (listing_key,)).fetchone()
         return bool(row and row["notified_at"])
 
+    def listings_by_source(self, source: str, limit: int = 2000) -> list[Listing]:
+        """Stored rows from one source, newest first (scan history survives restarts)."""
+        rows = self._exec("SELECT payload FROM listings WHERE source=? ORDER BY source_seen_at DESC LIMIT ?",
+                          (source, limit)).fetchall()
+        out = []
+        for r in rows:
+            try:
+                out.append(Listing.model_validate_json(r["payload"]))
+            except Exception:  # noqa: BLE001
+                continue
+        return out
+
+    def opportunities_by_source(self, source: str, limit: int = 2000) -> list[Opportunity]:
+        rows = self._exec("SELECT payload FROM opportunities WHERE listing_key LIKE ? ORDER BY detected_at DESC LIMIT ?",
+                          (source + "|%", limit)).fetchall()
+        out = []
+        for r in rows:
+            try:
+                out.append(Opportunity.model_validate_json(r["payload"]))
+            except Exception:  # noqa: BLE001
+                continue
+        return out
+
     def recent_opportunities(self, since: float, limit: int = 500) -> list[Opportunity]:
         rows = self._exec("SELECT payload FROM opportunities WHERE detected_at>=? ORDER BY detected_at DESC LIMIT ?",
                           (since, limit)).fetchall()

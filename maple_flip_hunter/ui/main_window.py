@@ -10,7 +10,7 @@ from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter, QPi
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
                                QMainWindow, QMenu, QPushButton, QSlider, QSplitter, QSystemTrayIcon, QTableView,
-                               QSizePolicy, QTextBrowser, QVBoxLayout, QWidget, QComboBox, QCheckBox)
+                               QSizePolicy, QTabWidget, QTextBrowser, QVBoxLayout, QWidget, QComboBox, QCheckBox)
 
 from .. import APP_NAME, USER_AGENT, __version__
 from ..collector.engine import MarketEngine
@@ -21,6 +21,7 @@ from .bridge import EngineBridge
 from ..fmwatcher_launcher import FMWatcherLauncher
 from ..paths import log_dir
 from .alert_popup import AlertPopup
+from .physical_tab import PhysicalScannerTab
 from .flow_layout import FlowLayout
 from .settings_dialog import SettingsDialog, fit_on_screen
 from .startup import set_run_on_startup
@@ -251,7 +252,11 @@ class MainWindow(QMainWindow):
         root.addWidget(split, 1)
         self._restore_layout()
 
-        self.setCentralWidget(central)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(central, "Market")
+        self.physical = PhysicalScannerTab(self)
+        self.tabs.addTab(self.physical, "Physical Scanner")
+        self.setCentralWidget(self.tabs)
         self.status = self.statusBar()
         self.status.showMessage("Ready. Press Start scanner.")
         self._set_state("OFFLINE")
@@ -449,9 +454,11 @@ class MainWindow(QMainWindow):
     # -------------------------------------------------------------- events
     def on_listing(self, lst, kind: str) -> None:
         self._new_listings += 1
+        self.physical.on_listing(lst, kind)
 
     def on_opportunity(self, opp: Opportunity) -> None:
         self.model.upsert(opp)
+        self.physical.on_opportunity(opp)
 
     def on_alert(self, opp: Opportunity, level: str, title: str, body: str) -> None:
         if opp.listing.source != "test":
@@ -535,6 +542,8 @@ class MainWindow(QMainWindow):
         self.stat_labels["coverage"].setToolTip(
             "Coverage = what the connected community scanners uploaded. Shops nobody scanned are NOT visible.")
         self.model.refresh_ages()
+        if int(time.time()) % 2 == 0:
+            self.physical.refresh_ages()
         if e.scanner_state == "LIVE":
             self.status.showMessage(f"LIVE · {e.metrics.listings_ingested:,} rows ingested · {e.metrics.evaluations:,} evaluated · "
                                     f"{e.metrics.alerts} alerts · dup alerts suppressed {e.metrics.duplicate_alerts_suppressed}")

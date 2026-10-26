@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.4 — 2026-10-26 (Physical Scanner tab)
+* New **Physical Scanner** tab: green **Start Scanning** (starts FM Watcher hidden, no console) / red **Stop Scanning**
+  (stops only the FM Watcher process; maplestory.watch and the other internet sources keep running), status pill
+  ONLINE / OFFLINE / ERROR with the reason, and a live table of your own scans: shop, item, buy, market value,
+  estimated profit, channel, location, scan time (ages refresh automatically).
+* Rows that pass your profit filters are highlighted green; they ring through the existing alert system (nothing new
+  in pricing/alerts — the tab is a view over the existing FM Watcher adapter and engine).
+* Scan history is kept in the database and reloaded into the tab on the next start. On quit, FM Watcher is stopped
+  only if Maple Flip Hunter started it.
+* Tests: start/stop isolation from internet sources, table contents and highlight, alert fired, history reload,
+  error state. 100 unit tests.
+
+
 ## 0.7.3 — 2026-10-26 (FIX: FM Watcher stuck on STARTING · FM Watcher auto-start)
 * **One program to open:** when Maple Flip Hunter starts (and 1.5 s after the window is up) it starts FM Watcher
   from the configured folder **hidden** — `python launcher.py` with CREATE_NO_WINDOW, same as start.bat but without
