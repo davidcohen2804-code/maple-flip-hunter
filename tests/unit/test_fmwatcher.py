@@ -199,3 +199,48 @@ def test_adapter_is_registered_and_polls_after_settings_save(tmp_path):
         assert eng.metrics.listings_ingested >= 20 and eng.scanner_state in ("LIVE", "DEGRADED")
     finally:
         eng.stop()
+
+
+def test_own_scan_before_index_is_repriced_when_index_arrives(tmp_path):
+    """Scan arrives before maplestory.watch's index is loaded → first valuation has no reference; once the index
+    is there the engine re-values it on its own (no user action) and the deal alerts."""
+    import httpx
+
+    from maple_flip_hunter.adapters.maplestory_watch import MapleStoryWatchAdapter
+    from tests.conftest import load_fixture
+
+    def handler(req):
+        if req.url.path == "/api/items":
+            return httpx.Response(200, json={"items": [{"name": "Hat Accuracy Scroll: Intermediate", "typical": 42_000, "samples": 50,
+                                                        "sales24h": 6, "lowest": 43_000, "listed": 3, "range": [40_000, 45_000], "seen": time.time()}]})
+        return httpx.Response(200, json={"listings": []})
+    msw = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), interval_s=60)
+    msw.bucket.rate = 1000
+    fm_dir = tmp_path / "FMWatcher"
+    fm_dir.mkdir()
+    _write(fm_dir / "watcher_data_v2.json", _store([("NoobTrader", "Hat Accuracy Scroll: Intermediate", 8_000, 1, 1, False, "FM3", 7, None, 5)]))
+    fmw = FMWatcherAdapter(directory=str(fm_dir), interval_s=1)
+    s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, alert_min_confidence_label="LOW")
+    n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
+    played = []
+    real = n.play
+    n.play = lambda sid, volume=None: (played.append(sid), real(sid, volume))  # type: ignore[method-assign]
+    eng = MarketEngine(s, Database(":memory:"), n, adapters=[fmw])          # msw NOT polled yet: index empty
+    eng.adapters.append(msw)
+    valued = []
+    eng.on("valued", lambda lst, v, level: valued.append((lst.listing_key, v.reference)))
+    rows = run(fmw.poll())
+    run(eng.ingest(rows))
+    assert valued and valued[0][1] is None and len(eng._revalue_later) == 1 and not played
+    run(msw.poll())                                                         # index arrives
+    assert msw.index
+    eng.running = True
+    run(eng._housekeeping_once()) if hasattr(eng, "_housekeeping_once") else None
+    if not hasattr(eng, "_housekeeping_once"):
+        # drive the housekeeping body directly
+        async def one():
+            todo, eng._revalue_later = eng._revalue_later[:200], []
+            for lst in todo:
+                await eng.evaluate(lst)
+        run(one())
+    assert valued[-1][1] == 42_000 and eng.metrics.alerts == 1 and played

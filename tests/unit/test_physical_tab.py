@@ -199,3 +199,97 @@ def test_start_stop_start_no_orphans_no_duplicates_no_autorestart_and_valuations
     assert "1 pass your filters" in tab.counter.text()
     tab.stop_scanning(); _settle(app, tab)
     w.tray.hide(); w.close()
+
+
+def test_history_rows_get_valuations_after_restart_and_new_scan_alerts(app, tmp_path, monkeypatch):
+    """Regression for 'scanner stopped' in Market value while ONLINE: rows loaded from history must never show a
+    scanner-state text; they are re-valued once the engine runs, valuations persist, and a fresh scan after
+    Stop → Start still prices and alerts."""
+    monkeypatch.setattr("maple_flip_hunter.fmwatcher_launcher.find_python", lambda: sys.executable)
+    folder = tmp_path / "FMWatcher"
+    _fake_watcher(folder)
+    db_file = tmp_path / "m.sqlite3"
+    s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_cozy_enabled=False,
+                 source_msw_enabled=False, source_fmwatcher_dir=str(folder), source_fmwatcher_autostart=False)
+
+    def evidence_factory(eng):
+        async def evidence(lst):
+            if "Unknown" in lst.item_name:
+                return None
+            return make_evidence(lst, sold_median=42_000, sold_count=40, sales24=6, asks=(43_000, 44_000, 46_000))
+        eng.gather_evidence = evidence  # type: ignore[method-assign]
+
+    # --- session 1: rows arrive while the engine is NOT running (e.g. imported history) ---
+    _write(folder / "watcher_data_v2.json", _store([
+        ("OldShop", "Pink Elephant Slippers", 39_999, 1, 1, False, "FM1", 35, None, 600),
+        ("Nobody", "Strange Unknown Thing", 5_000, 1, 1, False, "FM2", 2, None, 600)]))
+    n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
+    eng = MarketEngine(s, Database(str(db_file)), n)
+    evidence_factory(eng)
+    w = MainWindow(eng, s, n)
+    w.show(); app.processEvents()
+    from maple_flip_hunter.adapters.fmwatcher import FMWatcherAdapter
+    fmw = next(a for a in eng.adapters if isinstance(a, FMWatcherAdapter))
+    rows = asyncio.new_event_loop().run_until_complete(fmw.poll())
+    for lst in rows:                      # stored + shown, but not valued (engine idle)
+        eng.db.upsert_listing(lst, "x")
+        w.on_listing(lst, "new")
+    w.physical.flush(); app.processEvents()
+    r_old = w.physical.row_for_key(rows[0].listing_key)
+    txt = w.physical.table.item(r_old, 3).text()
+    assert "scanner stopped" not in txt and "not valued yet" in txt
+    w.tray.hide(); w.close(); eng.db.close()
+
+    # --- session 2: restart; history loads; engine starts → backfill values the old rows ---
+    n2 = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
+    played = []
+    real = n2.play
+    n2.play = lambda sid, volume=None: (played.append(sid), real(sid, volume))  # type: ignore[method-assign]
+    eng2 = MarketEngine(s, Database(str(db_file)), n2)
+    evidence_factory(eng2)
+    w2 = MainWindow(eng2, s, n2)
+    w2.show(); app.processEvents()
+    assert w2.physical.table.rowCount() == 2
+    r_old = w2.physical.row_for_key(rows[0].listing_key)
+    assert "scanner stopped" not in w2.physical.table.item(r_old, 3).text()
+    eng2.start()
+    try:
+        assert w2.physical.backfill_valuations() == 2
+        t0 = time.time()
+        while time.time() - t0 < 10 and len(w2.physical.vals) < 2:
+            app.processEvents(); time.sleep(0.02)
+        w2.physical.flush(); app.processEvents()
+        assert w2.physical.table.item(r_old, 3).text() == "42,000" and w2.physical.table.item(r_old, 4).text().startswith("-")   # 39,999 buy vs 42,000: a loss, shown
+        r_unk = w2.physical.row_for_key(rows[1].listing_key)
+        assert "no price data" in w2.physical.table.item(r_unk, 3).text()
+        assert not played                                          # 10-minute-old rows: no alert on backfill
+        assert eng2.db.valuations_for_source("fmwatcher")           # persisted
+        # --- Stop → Start → a NEW shop scan → pricing → alert ---
+        w2.physical.stop_scanning(); _settle(app, w2.physical)
+        fmw2 = next(a for a in eng2.adapters if isinstance(a, FMWatcherAdapter))
+        assert fmw2.paused
+        w2.physical.start_scanning(); _settle(app, w2.physical)
+        assert not fmw2.paused
+        time.sleep(0.05)
+        _write(folder / "watcher_data_v2.json", _store([
+            ("OldShop", "Pink Elephant Slippers", 39_999, 1, 1, False, "FM1", 35, None, 700),
+            ("NoobTrader", "Hat Accuracy Scroll: Intermediate", 8_000, 1, 1, False, "FM3", 7, None, 3)]))
+        t0 = time.time()
+        while time.time() - t0 < 15 and eng2.metrics.alerts < 1:
+            app.processEvents(); time.sleep(0.05)
+        t0 = time.time()
+        while time.time() - t0 < 5 and not any("noobtrader" in k for k in w2.physical.listings):
+            app.processEvents(); time.sleep(0.02)          # queued bridge signals reach the tab
+        w2.physical.flush(); app.processEvents()
+        assert eng2.metrics.alerts == 1 and played[-1] in ("melody", "jackpot", "bell")
+        key = next(k for k in w2.physical.listings if "noobtrader" in k)
+        r_new = w2.physical.row_for_key(key)
+        assert w2.physical.table.item(r_new, 3).text() == "42,000" and "1 pass your filters" in w2.physical.counter.text()
+        w2.physical.stop_scanning(); _settle(app, w2.physical)
+    finally:
+        eng2.stop()
+    # --- session 3: valuations survive another restart (no 'not valued yet') ---
+    eng3 = MarketEngine(s, Database(str(db_file)), n2)
+    w3 = MainWindow(eng3, s, n2)
+    assert w3.physical.table.item(w3.physical.row_for_key(rows[0].listing_key), 3).text() == "42,000"
+    w3.tray.hide(); w3.close(); w2.tray.hide(); w2.close()

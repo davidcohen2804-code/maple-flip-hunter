@@ -46,6 +46,7 @@ class MarketEngine:
         self.last_data_at: Optional[float] = None
         self._eval_lock: Optional[asyncio.Lock] = None
         self._coverage_cache: Optional[dict[str, Any]] = None
+        self._revalue_later: list[Listing] = []
         # availability verification: its own queue + task, fed AFTER alerts; never on the alert path
         self._verify_q: Optional[asyncio.PriorityQueue] = None
         self._verify_seq = 0
@@ -194,6 +195,16 @@ class MarketEngine:
                 self._coverage_cache = self._compute_coverage()
             except Exception:  # noqa: BLE001
                 pass
+            if self._revalue_later:
+                msw = next((a for a in self.adapters if isinstance(a, MapleStoryWatchAdapter)), None)
+                if msw is None or msw.index:
+                    todo, self._revalue_later = self._revalue_later[:200], self._revalue_later[200:]
+                    log.info("re-valuing %d own scans now that the market index is available", len(todo))
+                    for lst in todo:
+                        try:
+                            await self.evaluate(lst)
+                        except Exception:  # noqa: BLE001
+                            log.exception("re-value failed for %s", lst.listing_key)
             if time.time() - last_cleanup > 3600:
                 try:
                     s = self.settings
@@ -414,6 +425,14 @@ class MarketEngine:
         self.metrics.analysis_ms.add(analysis_ms)
         opp = self.detector.classify(lst, valuation, analysis_ms)
         self._emit("valued", lst, valuation, opp.level)        # every evaluated row (the Physical tab shows all)
+        if lst.source == "fmwatcher":
+            try:
+                self.db.save_valuation(lst.listing_key, valuation, opp.level.value)   # survives restarts
+            except Exception:  # noqa: BLE001
+                log.exception("valuation save failed")
+            msw = next((a for a in self.adapters if isinstance(a, MapleStoryWatchAdapter)), None)
+            if valuation.reference is None and msw is not None and not msw.index:
+                self._revalue_later.append(lst)       # own scan arrived before the market index: price it again later
         if opp.level == Level.NONE:
             return None
         if opp.level == Level.UNCERTAIN and not self.settings.show_uncertain:
@@ -460,6 +479,22 @@ class MarketEngine:
         if tier is None or not tier.enabled:
             return None
         return tier.sound
+
+    def revalue(self, listings: list[Listing]) -> bool:
+        """Re-run pricing for stored rows (e.g. own scans loaded from history that never got a valuation).
+        Runs on the engine loop; goes through the normal evaluate() path, so alerts obey the usual rules
+        (old rows are stale → no alert). Returns False when the scanner is not running."""
+        if not self.running or self._loop is None or not listings:
+            return False
+
+        async def do() -> None:
+            for lst in listings:
+                try:
+                    await self.evaluate(lst)
+                except Exception:  # noqa: BLE001
+                    log.exception("revalue failed for %s", lst.listing_key)
+        asyncio.run_coroutine_threadsafe(do(), self._loop)
+        return True
 
     # ----------------------------------------------------------- availability
     def queue_verification(self, opp: Opportunity, priority: int = 1, delay_s: float = 0.0) -> None:

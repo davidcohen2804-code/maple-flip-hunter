@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.10.1 — 2026-10-26 (FIX: Physical Scanner "scanner stopped" / empty profit)
+* Root cause: rows loaded from history (or scanned while the engine was idle) never received a valuation, and the
+  text baked into the cell at load time said "scanner stopped" because the window is built before the engine starts;
+  those rows were never re-evaluated afterwards. Valuations were also not persisted, so every restart lost them.
+* Now: valuations of own scans are **persisted** (`valuations` table) and reloaded with the rows; when the scanner
+  starts, rows without a valuation (≤ 24 h old) are **re-valued automatically** (through the normal pricing path —
+  old rows are stale, so no alert); an own scan that arrives **before maplestory.watch's index** is loaded is
+  re-priced by the engine as soon as the index is there.
+* Scanner state and valuation state are separate: stopping the scanner never clears valuations. Cells say exactly
+  why a price is missing: "no price data: item not in the market index", "not valued yet", "not valued: under 1,000
+  mesos" — never a scanner status. Rows older than the stale threshold are greyed so new scans stand out.
+* Tests: restart with history → backfill → values shown; Stop → Start → new shop scan → pricing → alert; values
+  survive another restart; scan-before-index re-pricing. **Windows CI**: the packaged EXE runs headless with an
+  FM Watcher-format store and must ingest, price (live maplestory.watch index) and alert on the under-priced shop.
+  128 unit tests. Market Scanner, Free Spot Detector and licensing unchanged.
+
+
 ## 0.10.0 — 2026-10-26 (Free Spot Detector — infrastructure + verified detection)
 * New tab **Free Spot Detector**: Start/Stop Monitoring (own background thread, bounded fps), ONLINE/OFFLINE/ERROR,
   scope (map, FM room, channel, channels to watch incl. ranges), alert set (PRIME default, +GOOD), live view with

@@ -80,6 +80,9 @@ CREATE TABLE IF NOT EXISTS source_status (
     name TEXT PRIMARY KEY, at REAL, payload TEXT
 );
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS valuations (
+    listing_key TEXT PRIMARY KEY, at REAL, level TEXT, payload TEXT
+);
 CREATE TABLE IF NOT EXISTS availability (
     listing_key TEXT PRIMARY KEY, status TEXT, observed_at REAL, checked_at REAL, note TEXT, source TEXT
 );
@@ -230,6 +233,22 @@ class Database:
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (l.listing_key, l.item_key, l.item_name, opp.level.value, l.price, v.reference, v.quick, v.net_profit,
              v.roi, v.confidence, opp.detected_at, opp.notified_at, opp.analysis_ms, opp.model_dump_json()))
+
+    def save_valuation(self, listing_key: str, valuation, level: str) -> None:
+        self._exec("INSERT OR REPLACE INTO valuations(listing_key, at, level, payload) VALUES (?,?,?,?)",
+                   (listing_key, time.time(), level, valuation.model_dump_json()))
+
+    def valuations_for_source(self, source: str, limit: int = 2000) -> dict[str, tuple]:
+        from ..models import Valuation
+
+        out: dict[str, tuple] = {}
+        for r in self._exec("SELECT listing_key, level, payload FROM valuations WHERE listing_key LIKE ? ORDER BY at DESC LIMIT ?",
+                            (source + "|%", limit)).fetchall():
+            try:
+                out[r["listing_key"]] = (Valuation.model_validate_json(r["payload"]), r["level"])
+            except Exception:  # noqa: BLE001
+                continue
+        return out
 
     def save_availability(self, listing_key: str, status: str, observed_at: float, checked_at: float, note: str, source: str) -> None:
         self._exec("INSERT OR REPLACE INTO availability(listing_key, status, observed_at, checked_at, note, source) VALUES (?,?,?,?,?,?)",

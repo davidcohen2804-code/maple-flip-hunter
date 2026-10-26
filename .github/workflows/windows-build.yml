@@ -68,6 +68,16 @@ jobs:
           if (-not (Test-Path reports\exe_headless_result.json)) { "NO RESULT FILE"; exit 1 }
           python tools/check_headless_result.py reports\exe_headless_result.json
 
+      - name: EXE with an FM Watcher store (own scan -> pricing via live maplestory.watch -> alert)
+        shell: pwsh
+        run: |
+          python tools/make_fmwatcher_fixture.py "$env:RUNNER_TEMP\FMWatcherCI"
+          (Get-Content tools/physical_ci_settings.json) -replace '__FOLDER__', ("$env:RUNNER_TEMP\FMWatcherCI" -replace '\\','\\') | Set-Content reports\physical_settings.json
+          $p = Start-Process -FilePath "dist\MapleFlipHunter\MapleFlipHunter.exe" -ArgumentList "--headless","--seconds","120","--settings","reports\physical_settings.json","--out","reports\exe_physical_result.json" -PassThru -Wait
+          "exe exit code: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { exit 1 }
+          python tools/check_physical_result.py reports\exe_physical_result.json
+
       - name: EXE against the local Club FM simulator (live feed with token -> alert -> sound; no maplefm.gg traffic)
         shell: pwsh
         run: |

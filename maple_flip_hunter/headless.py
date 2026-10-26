@@ -29,6 +29,10 @@ def run(seconds: float, db: str = ":memory:", audio: bool = False, settings_file
                                                             "location": o.listing.location, "shop": o.listing.seller,
                                                             "listing_age_s": round(o.listing.source_age_s),
                                                             "confidence": o.valuation.confidence}))
+    valued: list[dict] = []
+    engine.on("valued", lambda lst, v, level: valued.append({"source": lst.source, "item": lst.item_name, "buy": lst.price,
+                                                             "reference": v.reference, "net": v.net_profit, "confidence": v.confidence_label,
+                                                             "level": level.value}) if len(valued) < 500 else None)
     engine.on("opportunity", lambda o: opps.append({"level": o.level.value, "item": o.listing.item_name, "buy": o.listing.price,
                                                    "quick": o.valuation.quick, "net": o.valuation.net_profit,
                                                    "conf": o.valuation.confidence, "age_s": round(o.listing.source_age_s)}))
@@ -41,7 +45,7 @@ def run(seconds: float, db: str = ":memory:", audio: bool = False, settings_file
     engine.stop()
     return {"seconds": seconds, "scanner_state": final_state,
             "health": [h.model_dump() for h in engine.health()], "metrics": engine.metrics.snapshot(),
-            "coverage": engine.coverage(), "opportunities": opps[:50], "alerts": alerts,
+            "coverage": engine.coverage(), "opportunities": opps[:50], "alerts": alerts, "valued": valued[:200],
             "sound_latency_ms": list(engine.notifier.sound_latency_ms) if engine.notifier else []}
 
 

@@ -39,6 +39,7 @@ class PhysicalScannerTab(QWidget):
         self.opps: dict[str, Opportunity] = {}
         self.vals: dict[str, tuple] = {}       # listing_key -> (Valuation, Level) for every evaluated row
         self.stopped_by_user = False
+        self._pending_revalue: set[str] = set()
         # incremental UI: incoming rows are queued and flushed in one batch (sorting/painting paused)
         self._pending: dict[str, Listing] = {}
         self._flush_timer = QTimer(self)
@@ -252,6 +253,10 @@ class PhysicalScannerTab(QWidget):
         db = self.win.engine.db
         for o in db.opportunities_by_source("fmwatcher"):
             self.opps[o.key] = o
+        try:
+            self.vals.update(db.valuations_for_source("fmwatcher"))       # valuations persisted with the rows
+        except Exception:  # noqa: BLE001
+            pass
         self.table.setUpdatesEnabled(False)
         self.table.setSortingEnabled(False)
         try:
@@ -295,7 +300,22 @@ class PhysicalScannerTab(QWidget):
     def on_valued(self, lst: Listing, valuation, level) -> None:
         if lst.source == "fmwatcher":
             self.vals[lst.listing_key] = (valuation, level)
+            self._pending_revalue.discard(lst.listing_key)
             self._queue(lst)
+
+    def backfill_valuations(self, max_age_s: float = 24 * 3600) -> int:
+        """Rows that never received a valuation (history from before a restart, or rows scanned while the scanner
+        was stopped) are sent back through the pricing engine. Returns how many were queued."""
+        now = time.time()
+        todo = [lst for k, lst in self.listings.items()
+                if k not in self.vals and k not in self._pending_revalue and lst.price >= 1000 and not lst.sold
+                and now - lst.source_seen_at < max_age_s]
+        if not todo or not self.win.engine.revalue(todo):
+            return 0
+        for lst in todo:
+            self._pending_revalue.add(lst.listing_key)
+            self._queue(lst)
+        return len(todo)
 
     def _update_counter(self) -> None:
         self.counter.setText(f"{self.table.rowCount():,} scanned rows · {sum(1 for k in self.items if self._qualifies(self.opps.get(k))):,} pass your filters")
@@ -311,9 +331,11 @@ class PhysicalScannerTab(QWidget):
             return (risks[0][:60] if risks else "no reference price")
         if lst.price < 1000:
             return "not valued: under 1,000 mesos"
+        if lst.listing_key in self._pending_revalue:
+            return "valuing…"
         if not self.win.engine.running:
-            return "scanner stopped"
-        return "valuing…"
+            return "not valued yet (scanner idle)"
+        return "not valued yet"
 
     def _qualifies(self, opp: Optional[Opportunity]) -> bool:
         if opp is None or opp.level not in (Level.JACKPOT, Level.GOOD) or opp.stale or opp.gone:
@@ -362,8 +384,8 @@ class PhysicalScannerTab(QWidget):
                 it.setBackground(QBrush(QColor(GREEN + "26")))
                 if c == 1:
                     it.setForeground(QBrush(QColor(GREEN)))
-            elif lst.sold:
-                it.setForeground(QBrush(QColor(MUTED)))
+            elif lst.sold or time.time() - lst.source_seen_at > self.win.settings.max_listing_age_s:
+                it.setForeground(QBrush(QColor(MUTED)))          # old scan (older than the stale threshold): grey
             if opp:
                 it.setToolTip("\n".join([f"{opp.level.value} · {opp.availability}"] + v.explanation + opp.reasons))
             elif v is not None and c != 3:

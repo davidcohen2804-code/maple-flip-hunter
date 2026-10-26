@@ -478,7 +478,13 @@ class MainWindow(QMainWindow):
             self.engine.start()
             self.btn_start.setText("⏹  Stop scanner")
             self.status.showMessage("Scanner started — discovering the whole accessible market…")
+            QTimer.singleShot(1500, self._backfill_physical)
         self._refresh_stats()
+
+    def _backfill_physical(self) -> None:
+        n = self.physical.backfill_valuations()
+        if n:
+            log.info("physical scanner: re-valuing %d stored scans without a valuation", n)
 
     def _test_alarm(self) -> None:
         """Play the sound of the highest enabled profit band (the one a JACKPOT-sized profit would trigger)."""
@@ -650,6 +656,9 @@ class MainWindow(QMainWindow):
         self.stat_labels["coverage"].setToolTip(
             "Coverage = what the connected community scanners uploaded. Shops nobody scanned are NOT visible.")
         self.watchdog.mark("stats tick")
+        if e.running and not getattr(self, "_backfilled_once", False):
+            self._backfilled_once = True
+            QTimer.singleShot(3000, self._backfill_physical)
         self.model.refresh_ages()
         if int(time.time()) % 3 == 0:
             self.physical.refresh_ages()
