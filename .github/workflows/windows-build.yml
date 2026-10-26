@@ -101,6 +101,10 @@ jobs:
           Move-Item maple_flip_hunter\_edition.bak maple_flip_hunter\_edition.txt -Force
           Remove-Item maple_flip_hunter\friends_config.json
           if (-not (Test-Path dist\MapleFlipHunterFriends.exe)) { "NO FRIENDS EXE"; exit 1 }
+          # the release gate must REFUSE this CI binary (localhost server) — it is a test build, never a release
+          python tools/check_friends_binary.py dist\MapleFlipHunterFriends.exe
+          if ($LASTEXITCODE -eq 0) { "release gate accepted a localhost build"; exit 1 }
+          "release gate correctly refused the CI-DEMO binary (exit $LASTEXITCODE)"
           $srv = Start-Process -FilePath python -ArgumentList "server/license_server.py","--serve","8797" -PassThru -WindowStyle Hidden
           Start-Sleep -Seconds 3
           # 1) first start: trial begins on the server (exit 0)

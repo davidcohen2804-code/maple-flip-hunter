@@ -21,11 +21,20 @@
 * מסך נעילה: "Your 3-day free trial has expired." + המייל שלך + **Copy Email** + שדה קוד הפעלה + Check again.
 * קודים: `python server\license_server.py --code 30` (30 יום; `0` = לכל החיים). קוד תקף למכונה אחת.
 
-## הקמת השרת (פעם אחת)
-1. במחשב/VPS שלך: `pip install cryptography` ואז `python server\license_server.py --init` → מדפיס את המפתח הציבורי.
-2. `python server\license_server.py --serve 8787` (רצוי מאחורי HTTPS: Caddy/nginx). `private_key.pem` נשאר רק אצלך.
-3. בנייה: `build\windows\build_friends.bat https://license.your.host <public_key_hex>` → `dist\MapleFlipHunterFriends.exe`.
-4. `--list` מציג מכונות/ניסיון/סטטוס.
+## הקמת השרת ובניית ה-EXE להפצה
+ראה **`docs/LICENSE_SERVER_SETUP_HE.md`** — התקנה ב-VPS עם HTTPS (Caddy), ניהול (`--list/--code/--check/--revoke/--backup`),
+בניית ה-EXE דרך GitHub Actions ("Friends Edition release") עם כתובת השרת והמפתח הציבורי, עלויות ומה עדיין חסר.
+בנייה מקומית: `build\windows\build_friends.bat https://license.<domain> <public_key_hex>` ואז
+`python tools\check_friends_binary.py dist\MapleFlipHunterFriends.exe` (חובה: מסרב ל-localhost/placeholder).
+
+## הוראות לחברים (להעתקה)
+1. הורד את `MapleFlipHunterFriends.exe` מהקישור שקיבלת. אם Chrome מסמן "לא נפוץ" → ⋮ → Keep. אם Windows מציג
+   "Windows protected your PC" → More info → Run anyway (אין חתימת קוד; זה EXE חדש וקטן, לא וירוס).
+2. הפעל. בשלושת הימים הראשונים הכול עובד (Free Trial). בפס התחתון כתוב כמה נשאר.
+3. כשנגמר — מופיע מסך נעילה עם המייל של דוד ו-Copy Email. שלח לו את **12 התווים של Machine** שמופיעים במסך; תקבל קוד
+   `XXXX-XXXX-XXXX` → הכנס בשדה → Activate. קוד 14 יום או לצמיתות, למחשב אחד.
+4. התוכנה רק **מתריעה** על מודעות זולות (קול + כרטיס עם המיקום). היא לא נוגעת במשחק, לא מצלמת מסך, לא קוראת זיכרון.
+5. עדכונים: כשיש גרסה חדשה תופיע הצעה; הרישיון נשמר.
 
 ## עדכון מאובטח
 `python server\license_server.py --update 0.8.1 https://your.host/MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.exe`

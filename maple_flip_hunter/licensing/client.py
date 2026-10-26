@@ -68,6 +68,7 @@ class LicenseClient:
         self.state_file = state_file or (app_data_dir() / "friends_license.json")
         self.registry_key = registry_key
         self.timeout = timeout
+        self.version = __version__
         self.machine = machine_id()
         self.token: Optional[str] = None
         self.last_server_time: float = 0.0       # highest server time ever seen (persisted)
@@ -146,7 +147,7 @@ class LicenseClient:
             return None
         try:
             r = httpx.post(f"{self.server}{path}", json=body, timeout=self.timeout,
-                           headers={"User-Agent": f"MapleFlipHunterFriends/{__version__}"})
+                           headers={"User-Agent": f"MapleFlipHunterFriends/{self.version}"})
             if r.status_code != 200:
                 self.last_error = f"server replied {r.status_code}"
                 try:
@@ -174,15 +175,15 @@ class LicenseClient:
         return True
 
     def activate(self) -> bool:
-        data = self._post("/v1/activate", {"machine": self.machine, "version": __version__})
+        data = self._post("/v1/activate", {"machine": self.machine, "version": self.version})
         return bool(data and self._accept(data))
 
     def refresh(self) -> bool:
-        data = self._post("/v1/status", {"machine": self.machine, "version": __version__})
+        data = self._post("/v1/status", {"machine": self.machine, "version": self.version})
         return bool(data and self._accept(data))
 
     def redeem(self, code: str) -> tuple[bool, str]:
-        data = self._post("/v1/redeem", {"machine": self.machine, "code": code.strip(), "version": __version__})
+        data = self._post("/v1/redeem", {"machine": self.machine, "code": code.strip(), "version": self.version})
         if data and self._accept(data):
             return True, "activated"
         return False, self.last_error or "invalid code"
@@ -202,7 +203,9 @@ class LicenseClient:
         st = payload.get("st", "expired")
         exp = payload.get("exp")
         if st == "expired" or (exp is not None and now >= float(exp)):
-            msg = "Your 3-day free trial has expired." if kind == "trial" else "Your 14-day activation has expired."
+            msg = ("Your 3-day free trial has expired." if kind == "trial" else
+                   "This licence was revoked. Please contact the developer." if kind == "revoked" else
+                   "Your 14-day activation has expired.")
             return LicenseState("expired", exp, 0, msg, online, kind)
         remaining = (float(exp) - now) if exp is not None else None
         return LicenseState(st, exp, remaining, "ok", online, kind)

@@ -1,0 +1,11 @@
+# HTTPS front for the licence server. Replace license.example.com with YOUR domain (A record -> this VPS).
+# Caddy obtains and renews the Let's Encrypt certificate automatically. The Python server listens on
+# 127.0.0.1:8797 only; nothing else on the VPS is exposed.
+license.example.com {
+    encode gzip
+    reverse_proxy 127.0.0.1:8797
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        -Server
+    }
+}

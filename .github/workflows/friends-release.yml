@@ -1,0 +1,69 @@
+name: Friends Edition release
+
+# Builds MapleFlipHunterFriends.exe against YOUR licence server. Run manually (Actions → this workflow → Run):
+#   server_url  = https://<your-domain>            (the Caddy host from server/deploy)
+#   public_key  = contents of server/public_key.txt on the VPS (64 hex chars; it is public, not a secret)
+# Optional code signing: add repository secrets WINDOWS_CERT_PFX_BASE64 + WINDOWS_CERT_PASSWORD and the EXE is signed.
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: "Licence server URL (https://...)"
+        required: true
+      public_key:
+        description: "Server public key (hex, from public_key.txt)"
+        required: true
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .[dev] pyinstaller
+      - name: Unit tests (licensing + pure alert mode)
+        run: python -m pytest -q tests/unit/test_licensing.py tests/unit/test_lock_dialog.py tests/unit/test_pure_alert_mode.py tests/unit/test_friends_edition.py
+      - name: Refuse placeholder inputs
+        shell: pwsh
+        run: |
+          $u = "${{ inputs.server_url }}"
+          if ($u -notmatch '^https://' -or $u -match 'localhost|127\.0\.0\.1|example\.com') { Write-Error "server_url must be a real https:// address: $u" }
+          if ("${{ inputs.public_key }}" -notmatch '^[0-9a-fA-F]{64}$') { Write-Error "public_key must be 64 hex chars" }
+      - name: Build Friends EXE
+        shell: cmd
+        run: build\windows\build_friends.bat "${{ inputs.server_url }}" "${{ inputs.public_key }}"
+      - name: Verify binary (real server only, no CI/test strings)
+        run: python tools/check_friends_binary.py dist\MapleFlipHunterFriends.exe
+      - name: Sign (only if a certificate secret exists)
+        if: ${{ env.CERT != '' }}
+        env:
+          CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        shell: pwsh
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:CERT))
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          & $signtool.FullName sign /f cert.pfx /p $env:CERT_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 dist\MapleFlipHunterFriends.exe
+          Remove-Item cert.pfx
+      - name: Version + SHA256 file
+        shell: pwsh
+        run: |
+          $v = python -c "import maple_flip_hunter;print(maple_flip_hunter.__version__)"
+          $h = (Get-FileHash dist\MapleFlipHunterFriends.exe -Algorithm SHA256).Hash.ToLower()
+          "version=$v`nsha256=$h`nserver=${{ inputs.server_url }}`nbuilt=$(Get-Date -Format o)" | Set-Content dist\MapleFlipHunterFriends.version.txt
+          Get-Content dist\MapleFlipHunterFriends.version.txt
+      - name: Smoke run (no game processes, licence check reaches the real server or fails closed)
+        shell: pwsh
+        run: |
+          dist\MapleFlipHunterFriends.exe --license-check dist\license_probe.json
+          Write-Host "exit code $LASTEXITCODE"; Get-Content dist\license_probe.json
+          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3) { Write-Error "unexpected exit code" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MapleFlipHunterFriends-${{ github.run_number }}
+          path: |
+            dist/MapleFlipHunterFriends.exe
+            dist/MapleFlipHunterFriends.version.txt

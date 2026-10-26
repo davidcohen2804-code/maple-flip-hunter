@@ -1,0 +1,19 @@
+[Unit]
+Description=Maple Flip Hunter licence server
+After=network.target
+
+[Service]
+User=mfh
+WorkingDirectory=/opt/mfh/server
+ExecStart=/usr/bin/python3 /opt/mfh/server/license_server.py --serve 8797
+Restart=always
+RestartSec=5
+Environment=MFH_BIND=127.0.0.1
+# hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/mfh/server
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

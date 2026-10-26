@@ -52,3 +52,16 @@ def test_lock_dialog_message_copy_and_activation(app, tmp_path, monkeypatch):
         assert dlg.unlocked and c.state().status == "licensed"
     finally:
         s.shutdown()
+
+
+def test_lock_dialog_shows_machine_id_for_code_requests(app, tmp_path):
+    from maple_flip_hunter.licensing import LicenseClient
+    from maple_flip_hunter.ui.lock_dialog import LockDialog
+
+    c = LicenseClient(server="http://127.0.0.1:9", public_key="00" * 32, state_file=tmp_path / "s.json",
+                      registry_key="Software\\MFHTest\\lockdlg")
+    d = LockDialog(c, "Your 3-day free trial has expired.")
+    assert d.machine_short == c.machine[:12] and len(d.machine_short) == 12
+    d.copy_machine()
+    from PySide6.QtWidgets import QApplication
+    assert QApplication.clipboard().text() == d.machine_short

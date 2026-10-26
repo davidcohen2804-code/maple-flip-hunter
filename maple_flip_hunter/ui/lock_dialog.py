@@ -23,7 +23,7 @@ class LockDialog(QDialog):
         v.setContentsMargins(32, 28, 32, 28)
         v.setSpacing(14)
         st = client.state()
-        headline = "Your 3-day free trial has expired." if st.kind != "activation" else "Your 14-day activation has expired."
+        headline = {"activation": "Your 14-day activation has expired.", "revoked": "This licence was revoked."}.get(st.kind, "Your 3-day free trial has expired.")
         t = QLabel(headline)
         t.setObjectName("title")
         v.addWidget(t)
@@ -38,7 +38,18 @@ class LockDialog(QDialog):
         row.addWidget(self.btn_copy)
         row.addStretch(1)
         v.addLayout(row)
-        self.reason = QLabel("" if reason in ("Your 3-day free trial has expired.", "Your 14-day activation has expired.") else reason)
+        self.machine_short = client.machine[:12]
+        mrow = QHBoxLayout()
+        self.machine_lbl = QLabel(f"Machine: <b>{self.machine_short}</b> (send this with your request)")
+        self.machine_lbl.setObjectName("subtitle")
+        mrow.addWidget(self.machine_lbl)
+        self.btn_copy_machine = QPushButton("📋 Copy Machine ID")
+        self.btn_copy_machine.clicked.connect(self.copy_machine)
+        mrow.addWidget(self.btn_copy_machine)
+        mrow.addStretch(1)
+        v.addLayout(mrow)
+        self.reason = QLabel("" if reason in ("Your 3-day free trial has expired.", "Your 14-day activation has expired.",
+                                               "This licence was revoked. Please contact the developer.") else reason)
         self.reason.setObjectName("subtitle")
         self.reason.setWordWrap(True)
         v.addWidget(self.reason)
@@ -66,6 +77,10 @@ class LockDialog(QDialog):
         row3.addStretch(1)
         row3.addWidget(self.btn_quit)
         v.addLayout(row3)
+
+    def copy_machine(self) -> None:
+        QApplication.clipboard().setText(self.machine_short)
+        self.btn_copy_machine.setText("✓ Copied")
 
     def copy_email(self) -> None:
         QApplication.clipboard().setText(CONTACT_EMAIL)

@@ -11,3 +11,8 @@ headless_result.json
 exe_headless_result.json
 *.zip
 .pytest_cache/
+server/private_key.pem
+server/public_key.txt
+server/backups/
+server/update_manifest.json
+*.pfx

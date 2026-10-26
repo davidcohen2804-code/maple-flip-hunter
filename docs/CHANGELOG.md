@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.12.0 — 2026-10-26 (real Friends Edition distribution path)
+* Licence server ready for the internet: `server/deploy/` (install.sh for Ubuntu, systemd unit, Caddyfile for
+  automatic HTTPS), binds to 127.0.0.1 behind Caddy, per-IP rate limit (60/min → 429), 4 KB body cap, hourly
+  automatic sqlite backups (`backups/`, 30 kept) + `--backup`, `--check <machine>`, `--revoke` / `--unrevoke`
+  (revoked machines are locked even with lifetime; codes do not un-revoke), richer `--list`.
+* Client: revoked state shown on the lock screen; licence keyed by machine only → app updates never lose it.
+* Friends Edition hardening: `Settings.load()` forces physical features / FM Watcher off and the official Club FM
+  URL whatever settings.json says (`MFH_EDITION=friends`).
+* `.github/workflows/friends-release.yml`: manual release with `server_url` + `public_key` inputs, refuses
+  placeholders, builds the one-file EXE, `tools/check_friends_binary.py` verifies the bundle (https real server,
+  64-hex key, no 127.0.0.1/localhost/demo-token/CI strings), optional signtool when a cert secret exists,
+  `MapleFlipHunterFriends.version.txt` (version + SHA256), `--license-check` smoke against the real server.
+* Docs: `docs/LICENSE_SERVER_SETUP_HE.md` (what is needed from the owner, install, daily management, costs,
+  what is still missing). No CI-DEMO binary is presented as a release.
+
 ## 0.11.0 — 2026-10-26 (back to the original way of working: alerts only, no physical scanning)
 * `physical_features_enabled` (default **false**, the distributed build): the program is the **Market Scanner only**.
   No FM Watcher auto-start (`source_fmwatcher_autostart` now defaults to false as well), no Physical Scanner / Free

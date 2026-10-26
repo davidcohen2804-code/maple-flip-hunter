@@ -165,8 +165,25 @@ class Settings(BaseModel):
         path = path or settings_path()
         path.write_text(self.model_dump_json(indent=2), encoding="utf-8")
 
+    def _friends_hardening(self) -> "Settings":
+        """Friends Edition never runs physical features or unpermitted sources, whatever settings.json says."""
+        try:
+            from .edition import is_friends
+        except Exception:  # noqa: BLE001
+            return self
+        if is_friends():
+            self.physical_features_enabled = False
+            self.source_fmwatcher_autostart = False
+            self.source_fmwatcher_enabled = False
+            self.source_clubfm_base_url = "https://api.maplefm.gg"
+        return self
+
     @classmethod
     def load(cls, path: Path | None = None) -> "Settings":
+        return cls._load_raw(path)._friends_hardening()
+
+    @classmethod
+    def _load_raw(cls, path: Path | None = None) -> "Settings":
         path = path or settings_path()
         if path.exists():
             try:
