@@ -25,7 +25,7 @@ WORKER_DIR = HERE.parent / "server" / "cloudflare"
 def d1(sql: str) -> None:
     wr = shutil.which("wrangler") or shutil.which("wrangler.cmd")
     subprocess.run([wr, "d1", "execute", "mfh-licenses", "--local", "--command", sql], cwd=WORKER_DIR, check=True,
-                   capture_output=True, text=True)
+                   capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 def run_check(cmd: list[str], url: str, pub: str, out: Path, label: str, expect_exit: int, expect_status: str,
@@ -35,7 +35,7 @@ def run_check(cmd: list[str], url: str, pub: str, out: Path, label: str, expect_
     p = subprocess.run(cmd + ["--license-server", url, "--license-pubkey", pub, "--license-check", str(out)],
                        env=env, timeout=120)
     data = json.loads(out.read_text(encoding="utf-8"))
-    print(f"{label}: exit {p.returncode} → {data['status']} ({data['kind']}) {data.get('remaining_text') or data.get('message')}")
+    print(f"{label}: exit {p.returncode} -> {data['status']} ({data['kind']}) {data.get('remaining_text') or data.get('message')}")
     assert p.returncode == expect_exit, f"{label}: expected exit {expect_exit}, got {p.returncode}"
     assert data["status"] == expect_status, f"{label}: expected status {expect_status}, got {data['status']}"
     if expect_kind:
@@ -44,6 +44,10 @@ def run_check(cmd: list[str], url: str, pub: str, out: Path, label: str, expect_
 
 
 def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # Windows console is cp1252 by default
+    except Exception:  # noqa: BLE001
+        pass
     i = sys.argv.index("--")
     url, admin, out_dir = sys.argv[1].rstrip("/"), sys.argv[2], Path(sys.argv[3])
     cmd = sys.argv[i + 1:]
@@ -83,7 +87,7 @@ def main() -> int:
     assert r.get("revoked") is True, r
     run_check(cmd, url, pub, out_dir / "cf6.json", "6 revoked", 3, "expired", "revoked")
     httpx.post(url + "/admin/revoke", json={"machine": machine_prefix, "revoked": False}, headers=H, timeout=20)
-    print("OK: Cloudflare worker licence path (trial → lock → 14-day → lock → lifetime → revoke) passed")
+    print("OK: Cloudflare worker licence path (trial -> lock -> 14-day -> lock -> lifetime -> revoke) passed")
     (out_dir / "cf_license_stage.txt").write_text("ok " + time.strftime("%Y-%m-%d %H:%M:%S"), encoding="utf-8")
     return 0
 
