@@ -23,6 +23,13 @@ COLS = ["Shop", "Item", "Buy", "Market value", "Est. profit", "CH", "Location", 
 MAX_ROWS = 2000
 
 
+class _AfterSignal(__import__("PySide6.QtCore", fromlist=["QObject"]).QObject):
+    sig = __import__("PySide6.QtCore", fromlist=["Signal"]).Signal(object)
+
+    def emit(self, payload) -> None:
+        self.sig.emit(payload)
+
+
 class PhysicalScannerTab(QWidget):
     def __init__(self, window) -> None:
         super().__init__()
@@ -38,6 +45,8 @@ class PhysicalScannerTab(QWidget):
         self._flush_timer.setSingleShot(True)
         self._flush_timer.timeout.connect(self.flush)
         # the process/log probe runs in a background thread (psutil process_iter is slow on Windows)
+        self._after = _AfterSignal()
+        self._after.sig.connect(self._on_after)
         self._probe_lock = threading.Lock()
         self._probe = {"state": "stopped", "text": "FM Watcher not running", "tail": "", "at": 0.0}
         self._probe_running = False
@@ -95,37 +104,64 @@ class PhysicalScannerTab(QWidget):
         return next((a for a in self.win.engine.adapters if a.name == "fmwatcher"), None)
 
     def start_scanning(self) -> None:
+        """Responds at once: the process start (0.5 s + a process scan) runs on a worker thread."""
         s = self.win.settings
         if not s.source_fmwatcher_dir.strip():
             self.set_status("ERROR", "FM Watcher folder not set — Settings → Sources → FM Watcher folder")
             return
-        self.stopped_by_user = False
-        ok, msg = self.win.fmw_launcher.start()        # never a second copy (checks ours + external)
-        if not ok:
-            self.set_status("ERROR", msg)
+        if getattr(self, "_busy", False):
             return
+        self._busy = True
+        self.stopped_by_user = False
+        self.btn_start.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.set_status("ONLINE", "starting FM Watcher…")
         a = self._adapter()
         if a is not None:
             a.paused = False                            # resume reading the scan file
         elif self.win.engine.running:
             self.win.engine.stop()                      # adapter is built from settings at start
             self.win.engine.start()
-        self.probe_now(wait=True)
+        la = self.win.fmw_launcher
+
+        def work() -> None:
+            ok, msg = la.start()                        # never a second copy (checks ours + external)
+            self._after.emit(("start", ok, msg))
+        threading.Thread(target=work, name="mfh-fmw-start", daemon=True).start()
+
+    def _on_after(self, payload) -> None:
+        what, ok, msg = payload
+        self._busy = False
+        if what == "start" and not ok:
+            self.set_status("ERROR", msg)
+            self.btn_start.setEnabled(True)
+            return
+        self.probe_now()
+        QTimer.singleShot(300, self.refresh_status)
         self.refresh_status()
 
     def stop_scanning(self) -> None:
         """Stops the physical scan only: FM Watcher process (ours or started separately) AND the local file
-        ingestion. Internet sources keep running; nothing restarts automatically."""
+        ingestion. Internet sources keep running; nothing restarts automatically. Responds at once; the
+        process-tree kill runs on a worker thread."""
+        if getattr(self, "_busy", False):
+            return
+        self._busy = True
         self.stopped_by_user = True
-        la = self.win.fmw_launcher
-        la.stop(force_external=True)
-        la.error = ""
         a = self._adapter()
         if a is not None:
             a.paused = True
             a._set_status(SourceStatus.UNAVAILABLE, "stopped by you (Physical Scanner → Stop Scanning)")
-        self.probe_now(wait=True)
-        self.refresh_status()
+        self.btn_start.setEnabled(False)
+        self.btn_stop.setEnabled(False)
+        self.set_status("OFFLINE", "stopping FM Watcher…")
+        la = self.win.fmw_launcher
+
+        def work() -> None:
+            la.stop(force_external=True)
+            la.error = ""
+            self._after.emit(("stop", True, ""))
+        threading.Thread(target=work, name="mfh-fmw-stop", daemon=True).start()
 
     def set_status(self, state: str, text: str) -> None:
         color = {"ONLINE": GREEN, "ERROR": RED}.get(state, MUTED if state == "OFFLINE" else YELLOW)

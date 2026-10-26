@@ -65,15 +65,23 @@ class FMWatcherLauncher:
             return []
         want = str(self.folder).lower().rstrip("\\/")
         pids = []
-        for p in psutil.process_iter(["pid", "name", "cmdline", "cwd"]):
+        for p in psutil.process_iter(["pid", "name"]):            # name only: cheap; cmdline/cwd only for pythons
             try:
-                cmd = " ".join(p.info.get("cmdline") or []).lower()
+                if "python" not in (p.info.get("name") or "").lower():
+                    continue
+                cmd = " ".join(p.cmdline()).lower()
                 if not ("launcher.py" in cmd or "watcher.py" in cmd):
                     continue
-                cwd = (p.info.get("cwd") or "").lower().rstrip("\\/")
-                if want in cmd or cwd == want:
+                if want in cmd:
                     if self.proc is None or p.pid != self.proc.pid:
                         pids.append(p.pid)
+                    continue
+                try:
+                    cwd = (p.cwd() or "").lower().rstrip("\\/")
+                except Exception:  # noqa: BLE001
+                    cwd = ""
+                if cwd == want and (self.proc is None or p.pid != self.proc.pid):
+                    pids.append(p.pid)
             except Exception:  # noqa: BLE001
                 continue
         return pids

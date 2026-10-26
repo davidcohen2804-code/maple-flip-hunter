@@ -38,6 +38,18 @@ def _fake_watcher(folder):
         encoding="utf-8")
 
 
+def _settle(app, tab, timeout=10.0):
+    """Start/Stop run on a worker thread: pump events until the tab reports done."""
+    t0 = time.time()
+    while time.time() - t0 < timeout and getattr(tab, "_busy", False):
+        app.processEvents()
+        time.sleep(0.02)
+    for _ in range(5):
+        app.processEvents()
+        time.sleep(0.02)
+    tab.refresh_status()
+
+
 def test_physical_tab_start_stop_table_and_history(app, tmp_path, monkeypatch):
     monkeypatch.setattr("maple_flip_hunter.fmwatcher_launcher.find_python", lambda: sys.executable)
     folder = tmp_path / "FMWatcher"
@@ -65,7 +77,7 @@ def test_physical_tab_start_stop_table_and_history(app, tmp_path, monkeypatch):
     assert tab.status_pill.text() == "OFFLINE" and tab.btn_start.isEnabled() and not tab.btn_stop.isEnabled()
     msw_before = [a for a in eng.adapters if a.name == "msw"]
     # Start Scanning: FM Watcher process starts hidden; internet adapters are the same objects
-    tab.start_scanning(); app.processEvents()
+    tab.start_scanning(); _settle(app, tab)
     assert w.fmw_launcher.started_by_us and tab.status_pill.text() == "ONLINE" and tab.btn_stop.isEnabled()
     assert [a for a in eng.adapters if a.name == "msw"] == msw_before
     # rows flow through the existing adapter -> engine -> table; the qualifying one is green and rang
@@ -91,7 +103,7 @@ def test_physical_tab_start_stop_table_and_history(app, tmp_path, monkeypatch):
     assert tab.table.item(r2, 1).background().style() == _Qt.NoBrush          # not qualifying: no highlight
     assert "1 pass your filters" in tab.counter.text()
     # Stop Scanning: only the FM Watcher process stops; the scanner engine and msw keep running
-    tab.stop_scanning(); app.processEvents()
+    tab.stop_scanning(); _settle(app, tab)
     assert not w.fmw_launcher.started_by_us and tab.status_pill.text() == "OFFLINE"
     assert [a for a in eng.adapters if a.name == "msw"] == msw_before
     # history survives a restart of the app
@@ -143,7 +155,7 @@ def test_start_stop_start_no_orphans_no_duplicates_no_autorestart_and_valuations
     w.show(); app.processEvents()
     tab = w.physical
     # Start → process + ingestion
-    tab.start_scanning(); app.processEvents()
+    tab.start_scanning(); _settle(app, tab)
     pid1 = w.fmw_launcher.proc.pid
     t0 = time.time()
     while time.time() - t0 < 5 and not psutil.Process(pid1).children():
@@ -151,7 +163,7 @@ def test_start_stop_start_no_orphans_no_duplicates_no_autorestart_and_valuations
     kids1 = [c.pid for c in psutil.Process(pid1).children(recursive=True)]
     assert kids1 and tab.status_pill.text() == "ONLINE"
     # Stop → tree gone, ingestion paused, OFFLINE, and the autostart hook must NOT bring it back
-    tab.stop_scanning(); app.processEvents()
+    tab.stop_scanning(); _settle(app, tab)
     time.sleep(0.5)
     assert all(not psutil.pid_exists(p) or psutil.Process(p).status() == psutil.STATUS_ZOMBIE for p in [pid1] + kids1)
     assert not w.fmw_launcher.external_pids()
@@ -161,7 +173,7 @@ def test_start_stop_start_no_orphans_no_duplicates_no_autorestart_and_valuations
     fmw = next(a for a in eng.adapters if isinstance(a, FMWatcherAdapter))
     assert fmw.paused and asyncio.new_event_loop().run_until_complete(fmw.poll()) == []
     # Start again → exactly one process tree, ingestion resumes
-    tab.start_scanning(); app.processEvents()
+    tab.start_scanning(); _settle(app, tab)
     pid2 = w.fmw_launcher.proc.pid
     assert pid2 != pid1 and not fmw.paused and tab.status_pill.text() == "ONLINE"
     t0 = time.time()
@@ -185,5 +197,5 @@ def test_start_stop_start_no_orphans_no_duplicates_no_autorestart_and_valuations
     assert tab.table.item(r_noob, 3).text() == "42,000"
     assert played and eng.metrics.alerts == 1                             # the 8,000 deal rang; 39,999 is outside the band
     assert "1 pass your filters" in tab.counter.text()
-    tab.stop_scanning()
+    tab.stop_scanning(); _settle(app, tab)
     w.tray.hide(); w.close()

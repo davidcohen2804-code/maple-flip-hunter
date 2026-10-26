@@ -123,15 +123,26 @@ def test_start_stop_buttons_respond_during_load(app, tmp_path, monkeypatch):
         lst = make_listing(name=f"Item {i}", price=6_000, seller=f"s{i}", source="fmwatcher", age_s=5)
         w.on_listing(lst, "new"); w.physical.on_valued(lst, val, Level.NONE)
     t0 = time.perf_counter()
-    w.physical.btn_start.click()
-    start_ms = (time.perf_counter() - t0) * 1000
-    assert w.fmw_launcher.started_by_us and start_ms < 2_500, f"Start took {start_ms:.0f} ms"
+    w.physical.btn_start.click()                         # must return at once: the work is on a thread
+    click_ms = (time.perf_counter() - t0) * 1000
+    assert click_ms < 300, f"Start click blocked the UI for {click_ms:.0f} ms"
+    assert "starting" in w.physical.status_text.text()
+    t1 = time.time()
+    while time.time() - t1 < 15 and getattr(w.physical, "_busy", False):
+        app.processEvents(); time.sleep(0.02)
+    assert w.fmw_launcher.started_by_us
+    w.physical.refresh_status()
     assert w.physical.status_pill.text() == "ONLINE"
     w.physical.flush(); app.processEvents()
     t0 = time.perf_counter()
     w.physical.btn_stop.click()
-    stop_ms = (time.perf_counter() - t0) * 1000
-    assert not w.fmw_launcher.started_by_us and stop_ms < 7_000, f"Stop took {stop_ms:.0f} ms"
+    click_ms = (time.perf_counter() - t0) * 1000
+    assert click_ms < 300, f"Stop click blocked the UI for {click_ms:.0f} ms"
+    t1 = time.time()
+    while time.time() - t1 < 15 and getattr(w.physical, "_busy", False):
+        app.processEvents(); time.sleep(0.02)
+    assert not w.fmw_launcher.started_by_us
+    w.physical.refresh_status()
     assert w.physical.status_pill.text() == "OFFLINE"
     w.tray.hide(); w.close()
 

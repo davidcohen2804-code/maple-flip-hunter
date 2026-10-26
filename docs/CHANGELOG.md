@@ -14,6 +14,9 @@
   only for rated spots inside the chosen scope. Alert = distinct doorbell sound (not the profit bands) + floating
   "PRIME SPOT AVAILABLE" card with location, time, confidence and screenshot.
 * Persistence: `spots` / `spot_events` tables in the main database (ratings, stats, history survive restarts).
+* Physical Scanner Start/Stop now run the process start/kill on a worker thread (the click returns at once;
+  on the Windows runner a synchronous start took 4.6 s) and the FM Watcher process scan no longer reads every
+  process's cwd. Spots tab layout wraps on narrow windows.
 * Not yet calibrated with continuous captures from the user's own PC (see docs/FREE_SPOT_DETECTOR_HE.md).
   127 unit tests. Market/Physical scanners, alerts, Friends Edition and licensing unchanged.
 
