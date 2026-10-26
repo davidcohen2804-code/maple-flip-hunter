@@ -33,9 +33,16 @@ def server(tmp_path, monkeypatch):
     s.shutdown()
 
 
+import uuid
+
+_REG = {}
+
+
 def _client(server, tmp_path, name="a"):
+    """One isolated registry key per test (on Windows the HKCU copy is what survives reinstalls)."""
     url, pub = server
-    return LicenseClient(server=url, public_key=pub, state_file=tmp_path / f"{name}.json", registry_key=r"Software\MFHTest")
+    key = _REG.setdefault(str(tmp_path), r"Software\MFHTest\" + uuid.uuid4().hex)
+    return LicenseClient(server=url, public_key=pub, state_file=tmp_path / f"{name}.json", registry_key=key)
 
 
 def test_trial_starts_on_server_and_survives_reinstall(server, tmp_path):
@@ -43,10 +50,10 @@ def test_trial_starts_on_server_and_survives_reinstall(server, tmp_path):
     st = c.ensure()
     assert st.status == "trial" and 71.9 * 3600 < st.remaining_s <= 72 * 3600 and st.online
     first_exp = st.expires_at
-    # "reinstall": delete every local file → the server still knows this machine; no new 72 h
+    # "reinstall": delete every local file AND the registry copy → the server still knows this machine; no new 72 h
     os.unlink(c.state_file)
     c2 = _client(server, tmp_path, "b")
-    assert c2.token is None
+    c2.token, c2.last_server_time, c2.last_contact = None, 0.0, 0.0
     st2 = c2.ensure()
     assert st2.status == "trial" and abs(st2.expires_at - first_exp) < 1
 
