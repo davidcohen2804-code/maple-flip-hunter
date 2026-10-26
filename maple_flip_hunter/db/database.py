@@ -45,6 +45,8 @@ CREATE INDEX IF NOT EXISTS idx_listings_item ON listings(item_key, sold, source_
 CREATE INDEX IF NOT EXISTS idx_listings_cross ON listings(cross_key);
 CREATE INDEX IF NOT EXISTS idx_listings_seller ON listings(seller, item_key);
 CREATE INDEX IF NOT EXISTS idx_listings_seen ON listings(source_seen_at);
+CREATE INDEX IF NOT EXISTS idx_listings_local_first ON listings(local_first_seen_at);
+CREATE INDEX IF NOT EXISTS idx_listings_source ON listings(source, source_seen_at);
 CREATE TABLE IF NOT EXISTS listing_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     at REAL NOT NULL, listing_key TEXT, item_key TEXT, seller TEXT,

@@ -55,6 +55,8 @@ class Metrics:
         self.source_to_alert_s = Rolling()         # source observation -> notification fired
         self.ingest_to_alert_ms = Rolling()        # our first sight -> notification fired
         self.verifications = 0                      # background availability checks completed
+        self.ui_lag_ms = Rolling()                   # UI event-loop stalls measured by the watchdog
+        self.ui_stalls = 0                           # stalls above the threshold
         self.verified_gone = 0                      # rows confirmed REMOVED / SOLD
         self.poll_intervals = collections.defaultdict(Rolling)  # per source: seconds between successful polls
         self._last_poll: dict[str, float] = {}
@@ -105,6 +107,7 @@ class Metrics:
                 "source_age_at_ingest_s": self.source_age_at_ingest.stats(),
                 "ingest_to_alert_avg_ms": self.ingest_to_alert_ms.avg,
                 "verifications": self.verifications, "verified_gone": self.verified_gone,
+                "ui_lag_ms": self.ui_lag_ms.stats(), "ui_stalls": self.ui_stalls,
                 "poll_interval_avg_s": {k: v.avg for k, v in self.poll_intervals.items()},
                 **self.process_usage(),
             }

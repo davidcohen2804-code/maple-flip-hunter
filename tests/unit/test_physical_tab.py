@@ -77,6 +77,8 @@ def test_physical_tab_start_stop_table_and_history(app, tmp_path, monkeypatch):
     for o in opps:
         w.on_opportunity(o)
     app.processEvents()
+    assert tab.table.rowCount() == 0 and tab._flush_timer.isActive()      # batched, not one repaint per row
+    tab.flush(); app.processEvents()
     assert tab.table.rowCount() == 2
     r = tab.row_for_key(next(l.listing_key for l in rows if l.seller == "NoobTrader"))
     assert tab.table.item(r, 0).text() == "NoobTrader" and tab.table.item(r, 2).text() == "8,000"
@@ -174,7 +176,7 @@ def test_start_stop_start_no_orphans_no_duplicates_no_autorestart_and_valuations
         w.on_listing(lst, "new")
     for o in opps:
         w.on_opportunity(o)
-    app.processEvents()
+    tab.flush(); app.processEvents()
     r_rich = tab.row_for_key(next(l.listing_key for l in rows if l.seller == "Rich"))
     assert tab.table.item(r_rich, 3).text() == "45,000" and tab.table.item(r_rich, 4).text().startswith("+")
     r_unk = tab.row_for_key(next(l.listing_key for l in rows if l.seller == "Nobody"))

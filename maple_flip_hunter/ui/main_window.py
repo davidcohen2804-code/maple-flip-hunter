@@ -22,6 +22,7 @@ from ..fmwatcher_launcher import FMWatcherLauncher
 from ..paths import log_dir
 from .alert_popup import AlertPopup
 from .physical_tab import PhysicalScannerTab
+from .watchdog import UiWatchdog
 from .flow_layout import FlowLayout
 from .settings_dialog import SettingsDialog, fit_on_screen
 from .startup import set_run_on_startup
@@ -86,6 +87,7 @@ class MainWindow(QMainWindow):
         for opp in engine.db.recent_opportunities(time.time() - 6 * 3600):
             self.model.upsert(opp)
 
+        self.watchdog = UiWatchdog(engine.metrics, self)
         self.tick = QTimer(self)
         self.tick.timeout.connect(self._refresh_stats)
         self.tick.start(1000)
@@ -365,7 +367,10 @@ class MainWindow(QMainWindow):
         if not self.settings.source_fmwatcher_dir.strip():
             self._fmw_status_text = ""
             return
-        state, text = self.fmw_launcher.status()
+        probe = getattr(self.physical, "_probe", None)
+        if not probe:
+            return
+        state, text = probe["state"], probe["text"]
         color = {"running": GREEN, "error": RED}.get(state, YELLOW)
         self._fmw_status_text = f"<span style='color:{color}'>{html.escape(text)}</span>"
 
@@ -584,6 +589,8 @@ class MainWindow(QMainWindow):
         snd_txt = f" · ingest→sound {sum(snd[-50:]) / len(snd[-50:]):.0f} ms" if snd else ""
         if e.metrics.verifications:
             snd_txt += f" · verified {e.metrics.verifications} ({e.metrics.verified_gone} gone)"
+        if self.watchdog.worst_ms > 300:
+            snd_txt += f" · UI worst stall {self.watchdog.worst_ms:.0f} ms ({e.metrics.ui_stalls})"
         self.stat_labels["latency"].setText(f"{s2a:.1f} s (n={e.metrics.alerts}){snd_txt}" if s2a is not None else "no alerts yet")
         am = m.get("analysis_ms_avg")
         self.stat_labels["analysis"].setText(f"{am:.0f} ms" if am is not None else "—")
@@ -596,8 +603,9 @@ class MainWindow(QMainWindow):
                 lbl.setToolTip(lbl.text())
         self.stat_labels["coverage"].setToolTip(
             "Coverage = what the connected community scanners uploaded. Shops nobody scanned are NOT visible.")
+        self.watchdog.mark("stats tick")
         self.model.refresh_ages()
-        if int(time.time()) % 2 == 0:
+        if int(time.time()) % 3 == 0:
             self.physical.refresh_ages()
         if e.scanner_state == "LIVE":
             self.status.showMessage(f"LIVE · {e.metrics.listings_ingested:,} rows ingested · {e.metrics.evaluations:,} evaluated · "

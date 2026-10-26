@@ -56,7 +56,9 @@ class OpportunityModel(QAbstractTableModel):
     def refresh_ages(self) -> None:
         """Called by the UI timer every second: Age text and the fresh/stale colours update without a rescan."""
         if self.rows:
-            self.dataChanged.emit(self.index(0, 0), self.index(len(self.rows) - 1, len(COLUMNS) - 1))
+            n = len(self.rows) - 1
+            self.dataChanged.emit(self.index(0, 4), self.index(n, 4), [Qt.DisplayRole])          # Age text
+            self.dataChanged.emit(self.index(0, 0), self.index(n, 0), [Qt.ForegroundRole])       # fresh/stale colour
 
     def _reindex(self) -> None:
         self._index = {o.key: i for i, o in enumerate(self.rows)}

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.3 — 2026-10-26 (UI freezes — root causes fixed)
+* **What froze the GUI thread** (measured, now covered by tests):
+  1. The 1 s stats tick ran two `COUNT(*)` queries on the UI thread (one on an unindexed column) and waited on the
+     database lock while the engine thread was inside a large ingest batch → multi-second freezes that grew with the
+     database. Now the engine computes coverage on its own thread every 2 s and the UI reads a cached value; an index
+     was added for the 1 h count.
+  2. The Physical Scanner probed FM Watcher's process every 2 s with `psutil.process_iter` (cmdline + cwd of every
+     process — hundreds of ms on Windows) and read its log on the UI thread. Now a background thread probes every 5 s
+     and the UI shows the cached result.
+  3. The Physical Scanner table re-sorted on every single cell change (QTableWidget with sorting on): each incoming
+     row and each age refresh triggered O(n log n) sorts. Rows are now queued and flushed in one batch every 250 ms
+     with sorting/painting paused; the age refresh runs every 3 s without sorting, and the market table only
+     refreshes the two time-dependent columns.
+* UI watchdog: a 200 ms timer logs `UI_STALL <ms> (last activity: …)` for stalls > 300 ms, counts them in metrics
+  (`ui_lag_ms`, `ui_stalls`) and the status line shows the worst stall; process RSS/CPU already in metrics.
+* Regression tests: 5,000 rows + valuations (queue < 1.5 s, one flush, tick < 300 ms, idle stall < 300 ms), stats
+  tick must not wait on the engine's DB lock, Start/Stop respond under load, watchdog detects a synthetic stall.
+  113 unit tests. Scanning, alerts, pricing and licensing unchanged.
+
+
 ## 0.8.2 — 2026-10-26 (Physical Scanner fixes)
 * **Stop Scanning now really stops**: FM Watcher's launcher restarts its watcher child whenever the child exits, so
   killing the child first let it respawn. Stop now kills the launcher first, then every descendant, then sweeps any

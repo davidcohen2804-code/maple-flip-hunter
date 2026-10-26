@@ -45,6 +45,7 @@ class MarketEngine:
         self.scanner_state = "OFFLINE"
         self.last_data_at: Optional[float] = None
         self._eval_lock: Optional[asyncio.Lock] = None
+        self._coverage_cache: Optional[dict[str, Any]] = None
         # availability verification: its own queue + task, fed AFTER alerts; never on the alert path
         self._verify_q: Optional[asyncio.PriorityQueue] = None
         self._verify_seq = 0
@@ -185,6 +186,10 @@ class MarketEngine:
                 except Exception:  # noqa: BLE001
                     pass
             self._emit("health", self.health())
+            try:
+                self._coverage_cache = self._compute_coverage()
+            except Exception:  # noqa: BLE001
+                pass
             if time.time() - last_cleanup > 3600:
                 try:
                     s = self.settings
@@ -216,6 +221,13 @@ class MarketEngine:
         return [a.health for a in self.adapters]
 
     def coverage(self) -> dict[str, Any]:
+        """Cheap for the UI: while the scanner runs, the housekeeping task refreshes this every 2 s on the engine
+        thread (DB counts never run on the UI thread, which used to stall behind large ingest transactions)."""
+        if self.running and self._coverage_cache is not None:
+            return self._coverage_cache
+        return self._compute_coverage()
+
+    def _compute_coverage(self) -> dict[str, Any]:
         cov: dict[str, Any] = {"catalog_items": 0, "items_with_listings": self.db.item_count(),
                                "listings_1h": self.db.listing_count(time.time() - 3600)}
         for a in self.adapters:

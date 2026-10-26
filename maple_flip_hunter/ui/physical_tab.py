@@ -7,7 +7,9 @@ import html
 import time
 from typing import Optional
 
-from PySide6.QtCore import Qt
+import threading
+
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (QAbstractItemView, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
@@ -30,6 +32,15 @@ class PhysicalScannerTab(QWidget):
         self.opps: dict[str, Opportunity] = {}
         self.vals: dict[str, tuple] = {}       # listing_key -> (Valuation, Level) for every evaluated row
         self.stopped_by_user = False
+        # incremental UI: incoming rows are queued and flushed in one batch (sorting/painting paused)
+        self._pending: dict[str, Listing] = {}
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setSingleShot(True)
+        self._flush_timer.timeout.connect(self.flush)
+        # the process/log probe runs in a background thread (psutil process_iter is slow on Windows)
+        self._probe_lock = threading.Lock()
+        self._probe = {"state": "stopped", "text": "FM Watcher not running", "tail": "", "at": 0.0}
+        self._probe_running = False
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 8, 0, 0)
         root.setSpacing(10)
@@ -99,6 +110,7 @@ class PhysicalScannerTab(QWidget):
         elif self.win.engine.running:
             self.win.engine.stop()                      # adapter is built from settings at start
             self.win.engine.start()
+        self.probe_now(wait=True)
         self.refresh_status()
 
     def stop_scanning(self) -> None:
@@ -112,6 +124,7 @@ class PhysicalScannerTab(QWidget):
         if a is not None:
             a.paused = True
             a._set_status(SourceStatus.UNAVAILABLE, "stopped by you (Physical Scanner → Stop Scanning)")
+        self.probe_now(wait=True)
         self.refresh_status()
 
     def set_status(self, state: str, text: str) -> None:
@@ -138,9 +151,10 @@ class PhysicalScannerTab(QWidget):
         return " · ".join(parts)
 
     def _watcher_log_tail(self) -> str:
-        folder = self.win.settings.source_fmwatcher_dir.strip()
-        if not folder:
-            return ""
+        return self._probe.get("tail", "")
+
+    @staticmethod
+    def _read_log_tail(folder: str) -> str:
         try:
             import os
 
@@ -153,8 +167,31 @@ class PhysicalScannerTab(QWidget):
         except OSError:
             return ""
 
+    def probe_now(self, wait: bool = False) -> None:
+        """Refresh the process state + log tail off the UI thread (psutil.process_iter can take 100s of ms)."""
+        if self._probe_running:
+            return
+        self._probe_running = True
+        la, folder = self.win.fmw_launcher, self.win.settings.source_fmwatcher_dir.strip()
+
+        def work() -> None:
+            try:
+                state, text = la.status()
+                tail = self._read_log_tail(folder) if folder else ""
+                with self._probe_lock:
+                    self._probe = {"state": state, "text": text, "tail": tail, "at": time.time()}
+            finally:
+                self._probe_running = False
+        t = threading.Thread(target=work, name="mfh-fmw-probe", daemon=True)
+        t.start()
+        if wait:
+            t.join(5)
+
     def refresh_status(self) -> None:
-        state, text = self.win.fmw_launcher.status()
+        if time.time() - self._probe.get("at", 0) > 5:
+            self.probe_now()
+        with self._probe_lock:
+            state, text = self._probe["state"], self._probe["text"]
         adapter = self._adapter()
         if state == "error":
             self.set_status("ERROR", text)
@@ -179,22 +216,53 @@ class PhysicalScannerTab(QWidget):
         db = self.win.engine.db
         for o in db.opportunities_by_source("fmwatcher"):
             self.opps[o.key] = o
-        for lst in reversed(db.listings_by_source("fmwatcher")):
-            self.upsert(lst, from_history=True)
+        self.table.setUpdatesEnabled(False)
+        self.table.setSortingEnabled(False)
+        try:
+            for lst in reversed(db.listings_by_source("fmwatcher")):
+                self.upsert(lst, from_history=True, batch=True)
+        finally:
+            self.table.setSortingEnabled(True)
+            self.table.setUpdatesEnabled(True)
+        self._update_counter()
+
+    def _queue(self, lst: Listing) -> None:
+        self._pending[lst.listing_key] = lst
+        if not self._flush_timer.isActive():
+            self._flush_timer.start(250)
+
+    def flush(self) -> None:
+        """Apply all queued rows in one go: one sort, one repaint — not one per row."""
+        if not self._pending:
+            return
+        pending, self._pending = self._pending, {}
+        self.table.setUpdatesEnabled(False)
+        sort_on = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        try:
+            for lst in pending.values():
+                self.upsert(lst, batch=True)
+        finally:
+            self.table.setSortingEnabled(sort_on)
+            self.table.setUpdatesEnabled(True)
+        self._update_counter()
 
     def on_listing(self, lst: Listing, kind: str) -> None:
         if lst.source == "fmwatcher":
-            self.upsert(lst)
+            self._queue(lst)
 
     def on_opportunity(self, opp: Opportunity) -> None:
         if opp.listing.source == "fmwatcher":
             self.opps[opp.key] = opp
-            self.upsert(opp.listing)
+            self._queue(opp.listing)
 
     def on_valued(self, lst: Listing, valuation, level) -> None:
         if lst.source == "fmwatcher":
             self.vals[lst.listing_key] = (valuation, level)
-            self.upsert(lst)
+            self._queue(lst)
+
+    def _update_counter(self) -> None:
+        self.counter.setText(f"{self.table.rowCount():,} scanned rows · {sum(1 for k in self.items if self._qualifies(self.opps.get(k))):,} pass your filters")
 
     def _no_price_reason(self, lst: Listing) -> str:
         v = self.vals.get(lst.listing_key)
@@ -216,12 +284,13 @@ class PhysicalScannerTab(QWidget):
             return False
         return passes_user_filters(opp.listing, opp.valuation, self.win.settings)[0]
 
-    def upsert(self, lst: Listing, from_history: bool = False) -> None:
+    def upsert(self, lst: Listing, from_history: bool = False, batch: bool = False) -> None:
         key = lst.listing_key
         self.listings[key] = lst
         opp = self.opps.get(key)
-        sort_on = self.table.isSortingEnabled()
-        self.table.setSortingEnabled(False)
+        sort_on = self.table.isSortingEnabled() if not batch else False
+        if not batch:
+            self.table.setSortingEnabled(False)
         if key in self.items:
             r = self.items[key].row()
         else:
@@ -243,7 +312,7 @@ class PhysicalScannerTab(QWidget):
         for c, val in enumerate(vals):
             it = QTableWidgetItem(val)
             if c in (2, 3, 4, 5, 7):
-                it.setTextAlignment(int(Qt.AlignRight | Qt.AlignVCenter))
+                it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             if c == 2:
                 it.setData(Qt.UserRole, lst.price)
             if c == 4 and v and v.net_profit is not None:
@@ -266,16 +335,27 @@ class PhysicalScannerTab(QWidget):
             self.table.setItem(r, c, it)
             if c == 0:
                 self.items[key] = it
-        self.table.setSortingEnabled(sort_on)
-        self.counter.setText(f"{self.table.rowCount():,} scanned rows · {sum(1 for k in self.items if self._qualifies(self.opps.get(k))):,} pass your filters")
+        if not batch:
+            self.table.setSortingEnabled(sort_on)
+            self._update_counter()
 
     def refresh_ages(self) -> None:
+        """Called every few seconds from the UI tick; must stay cheap (no sorting, no painting per cell)."""
         now = time.time()
-        for key, first in self.items.items():
-            lst = self.listings.get(key)
-            it = self.table.item(first.row(), 7)
-            if lst and it:
-                it.setText(fmt_age(max(0.0, now - lst.source_seen_at)))
+        sort_on = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        self.table.setUpdatesEnabled(False)
+        try:
+            for key, first in self.items.items():
+                lst = self.listings.get(key)
+                it = self.table.item(first.row(), 7)
+                if lst and it:
+                    txt = fmt_age(max(0.0, now - lst.source_seen_at))
+                    if it.text() != txt:
+                        it.setText(txt)
+        finally:
+            self.table.setUpdatesEnabled(True)
+            self.table.setSortingEnabled(sort_on)
         self.refresh_status()
 
     def row_for_key(self, key: str) -> Optional[int]:
