@@ -18,6 +18,8 @@ from ..collector.normalize import stats_signature
 from ..config import Settings
 from ..models import Level, Opportunity, SourceHealth
 from .bridge import EngineBridge
+from ..fmwatcher_launcher import FMWatcherLauncher
+from ..paths import log_dir
 from .alert_popup import AlertPopup
 from .flow_layout import FlowLayout
 from .settings_dialog import SettingsDialog, fit_on_screen
@@ -85,6 +87,9 @@ class MainWindow(QMainWindow):
         self.tick = QTimer(self)
         self.tick.timeout.connect(self._refresh_stats)
         self.tick.start(1000)
+        self.fmw_launcher = FMWatcherLauncher(self.settings.source_fmwatcher_dir, log_dir())
+        self._fmw_status_text = ""
+        QTimer.singleShot(1500, self.autostart_fmwatcher)   # after the window is up
         self._new_listings = 0
 
     # ------------------------------------------------------------- layout
@@ -278,6 +283,32 @@ class MainWindow(QMainWindow):
         self.tray.setToolTip(APP_NAME)
         self.tray.show()
 
+    # ------------------------------------------------------------ FM Watcher process
+    def autostart_fmwatcher(self) -> None:
+        s = self.settings
+        if not (s.source_fmwatcher_autostart and s.source_fmwatcher_dir.strip()):
+            return
+        if str(self.fmw_launcher.folder or "") != s.source_fmwatcher_dir.strip():
+            self.fmw_launcher.stop()
+            self.fmw_launcher = FMWatcherLauncher(s.source_fmwatcher_dir, log_dir())
+        ok, msg = self.fmw_launcher.start()
+        log.info("fmwatcher launcher: %s", msg)
+        if ok:
+            self.status.showMessage(f"FM Watcher: {msg}", 8000)
+        else:
+            self.status.showMessage(f"FM Watcher could not start — {msg}", 30000)
+            if hasattr(self, "tray"):
+                self.tray.showMessage("FM Watcher did not start", msg, QSystemTrayIcon.Warning, 10000)
+        self._refresh_fmw_status()
+
+    def _refresh_fmw_status(self) -> None:
+        if not self.settings.source_fmwatcher_dir.strip():
+            self._fmw_status_text = ""
+            return
+        state, text = self.fmw_launcher.status()
+        color = {"running": GREEN, "error": RED}.get(state, YELLOW)
+        self._fmw_status_text = f"<span style='color:{color}'>{html.escape(text)}</span>"
+
     # ------------------------------------------------------------ layout memory
     def _screen_rect(self) -> QRect:
         scr = self.screen() or QGuiApplication.primaryScreen()
@@ -319,6 +350,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802
         self.save_layout()
         if self._quitting or not self.tray.isVisible():
+            self.fmw_launcher.stop()
             self.engine.stop()
             event.accept()
             return
@@ -330,6 +362,7 @@ class MainWindow(QMainWindow):
     def quit_app(self) -> None:
         self._quitting = True
         self.save_layout()
+        self.fmw_launcher.stop()                  # only stops a watcher WE started
         self.engine.stop()
         QApplication.instance().quit()
 
@@ -381,6 +414,10 @@ class MainWindow(QMainWindow):
             self.model.stale_after_s = float(new.max_listing_age_s)
             self.proxy.invalidateFilter()      # existing rows that no longer pass disappear at once (DB keeps them)
             source_changed = any(getattr(old, k) != getattr(new, k) for k in new.model_fields if k.startswith("source_"))
+            if (old.source_fmwatcher_dir, old.source_fmwatcher_autostart) != (new.source_fmwatcher_dir, new.source_fmwatcher_autostart):
+                if not new.source_fmwatcher_autostart or old.source_fmwatcher_dir != new.source_fmwatcher_dir:
+                    self.fmw_launcher.stop()
+                QTimer.singleShot(200, self.autostart_fmwatcher)
             if source_changed and self.engine.running:
                 self.engine.stop()
                 self.engine.start()            # rebuilds adapters with fresh clients from the new settings
@@ -469,9 +506,11 @@ class MainWindow(QMainWindow):
         e._refresh_state()
         self._set_state(e.scanner_state)
         online = [h for h in health if h.status.value == "ONLINE"]
+        if int(time.time()) % 5 == 0:
+            self._refresh_fmw_status()
         self.stat_labels["sources"].setText(
-            " · ".join(f"<span style='color:{GREEN if h.status.value=='ONLINE' else YELLOW if h.status.value in ('STALE','RATE LIMITED') else RED}'>"
-                       f"{h.label}: {h.status.value}</span>" for h in health) or "none")
+            " · ".join([f"<span style='color:{GREEN if h.status.value=='ONLINE' else YELLOW if h.status.value in ('STALE','RATE LIMITED') else RED}'>"
+                        f"{h.label}: {h.status.value}</span>" for h in health] + ([self._fmw_status_text] if self._fmw_status_text else [])) or "none")
         last = max((h.last_success_at or 0) for h in health) if health else 0
         self.stat_labels["update"].setText(fmt_age(time.time() - last) + " ago" if last else "—")
         ages = [h.newest_data_age_s for h in online if h.newest_data_age_s is not None]

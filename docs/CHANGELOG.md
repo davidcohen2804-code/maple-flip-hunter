@@ -1,6 +1,18 @@
 # Changelog
 
-## 0.7.3 — 2026-10-26 (FIX: FM Watcher stuck on STARTING)
+## 0.7.3 — 2026-10-26 (FIX: FM Watcher stuck on STARTING · FM Watcher auto-start)
+* **One program to open:** when Maple Flip Hunter starts (and 1.5 s after the window is up) it starts FM Watcher
+  from the configured folder **hidden** — `python launcher.py` with CREATE_NO_WINDOW, same as start.bat but without
+  the black console; output goes to `%APPDATA%\MapleFlipHunter\logs\fmwatcher_launch.log`. FM Watcher keeps
+  screen-reading the game exactly as before (it never needed its own window).
+* Never a second copy: an FM Watcher already running (started by you or by us) is detected (psutil) and reused.
+  On Quit / window close-to-exit Maple Flip Hunter stops FM Watcher **only if it started it** (whole process tree).
+* Settings → Sources: "Start FM Watcher automatically …" (default on). Status strip shows
+  "FM Watcher running (started by Maple Flip Hunter, pid …)" / "started separately" / "not running — <reason>";
+  a start failure shows the reason in the status bar and a tray message (folder missing, launcher.py missing,
+  Python not installed → run install.bat, exited immediately → see the launch log).
+* Tests: unit (hidden start, duplicate prevention, stop only ours incl. child, every error message) + Windows
+  runtime (CREATE_NO_WINDOW flag, child watcher.py started, tree stopped).
 * Root cause: the FM Watcher adapter read the file correctly but never called `mark_success`, so its health could
   not leave STARTING and nothing about it was logged. Reproduced with the user's real `watcher_data_v2.json`
   (21 shop entries, Kerning City, channel 35) — now a regression test (unit + Windows).

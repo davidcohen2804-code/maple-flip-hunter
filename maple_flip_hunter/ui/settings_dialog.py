@@ -256,6 +256,10 @@ class SettingsDialog(QDialog):
         fmw_host = QWidget()
         fmw_host.setLayout(fmw_row)
         f4.addRow("FM Watcher folder (your own scans)", fmw_host)
+        self.cb_fmw_auto = QCheckBox("Start FM Watcher automatically with Maple Flip Hunter (hidden, no console window) "
+                                     "and stop it on quit")
+        self.cb_fmw_auto.setChecked(s.source_fmwatcher_autostart)
+        f4.addRow(self.cb_fmw_auto)
         fmw_note = QLabel("Run Club FM's FM Watcher while you browse the FM; its local watcher_data_v2.json / my_scans.csv "
                           "become a live source here. Nothing is sent anywhere.")
         fmw_note.setObjectName("subtitle")
@@ -383,6 +387,6 @@ class SettingsDialog(QDialog):
             source_msw_interval_s=self.msw_int.value(), source_cozy_token=self.cozy_token.text().strip(),
             source_clubfm_permission_granted=self.cb_clubfm.isChecked(),
             source_clubfm_token=self.clubfm_token.text().strip(),
-            source_fmwatcher_dir=self.fmw_dir.text().strip(),
+            source_fmwatcher_dir=self.fmw_dir.text().strip(), source_fmwatcher_autostart=self.cb_fmw_auto.isChecked(),
         )
         return Settings.model_validate(d)

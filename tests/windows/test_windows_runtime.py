@@ -297,3 +297,40 @@ def test_fmwatcher_real_sample_goes_online_in_the_engine_on_windows(tmp_path):
         assert fmw.health.status == SourceStatus.ONLINE and eng.metrics.listings_ingested >= 20
     finally:
         eng.stop()
+
+
+def test_fmwatcher_autostart_hidden_on_windows(tmp_path, monkeypatch):
+    """Real Windows: the watcher is started with CREATE_NO_WINDOW (no black console), detected as running,
+    not duplicated, and stopped with its child on quit."""
+    import subprocess
+    import sys
+
+    import psutil
+
+    from maple_flip_hunter.fmwatcher_launcher import CREATE_NO_WINDOW, FMWatcherLauncher
+
+    folder = tmp_path / "FMWatcher"
+    folder.mkdir()
+    (folder / "watcher.py").write_text("import time\nwhile True:\n    time.sleep(0.2)\n", encoding="utf-8")
+    (folder / "launcher.py").write_text(
+        "import subprocess, sys, os\nsubprocess.call([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'watcher.py')])\n",
+        encoding="utf-8")
+    monkeypatch.setattr("maple_flip_hunter.fmwatcher_launcher.find_python", lambda: sys.executable)
+    flags = []
+    real = subprocess.Popen
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: (flags.append(k.get("creationflags", 0)), real(*a, **k))[1])
+    la = FMWatcherLauncher(str(folder), tmp_path / "logs")
+    ok, msg = la.start()
+    assert ok, msg
+    assert flags[0] & CREATE_NO_WINDOW, "console window must be hidden"
+    t0 = time.time()
+    while time.time() - t0 < 5 and not psutil.Process(la.proc.pid).children():
+        time.sleep(0.1)
+    kids = [c.pid for c in psutil.Process(la.proc.pid).children(recursive=True)]
+    assert kids, "launcher must have started watcher.py"
+    assert FMWatcherLauncher(str(folder), tmp_path / "logs").start()[1].startswith("already running")
+    pid = la.proc.pid
+    la.stop()
+    time.sleep(0.5)
+    assert not psutil.pid_exists(pid) and all(not psutil.pid_exists(k) for k in kids)
+    print("FMWATCHER-AUTOSTART: hidden start, duplicate prevented, tree stopped")
