@@ -104,14 +104,28 @@ jobs:
           "expired exit $($p.ExitCode): $(Get-Content reports\lic2.json)"
           if ($p.ExitCode -ne 3) { "EXPECTED LOCK"; exit 1 }
           python tools/check_license_result.py reports\lic2.json expired
-          # 3) activation code issued by the admin tool -> licensed (exit 0)
-          $code = ((python server/license_server.py --code 30) -split ': ')[-1].Trim()
+          # 3) one-time 14-day activation code -> licensed (exit 0)
+          $code = ((python server/license_server.py --code 14) -split ': ')[-1].Trim()
           python tools/ci_license_redeem.py http://127.0.0.1:8797 $code
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $p = Start-Process -FilePath dist\MapleFlipHunterFriends.exe -ArgumentList "--license-check","reports\lic3.json" -PassThru -Wait
-          "renewed exit $($p.ExitCode): $(Get-Content reports\lic3.json)"
+          "14-day exit $($p.ExitCode): $(Get-Content reports\lic3.json)"
           if ($p.ExitCode -ne 0) { exit 1 }
-          python tools/check_license_result.py reports\lic3.json licensed
+          python tools/check_license_result.py reports\lic3.json licensed activation
+          # 4) the 14 days run out on the server -> locked again (exit 3)
+          python tools/ci_license_shift.py server/licenses.sqlite3 activation
+          $p = Start-Process -FilePath dist\MapleFlipHunterFriends.exe -ArgumentList "--license-check","reports\lic4.json" -PassThru -Wait
+          "activation expired exit $($p.ExitCode): $(Get-Content reports\lic4.json)"
+          if ($p.ExitCode -ne 3) { "EXPECTED LOCK AFTER 14 DAYS"; exit 1 }
+          python tools/check_license_result.py reports\lic4.json expired activation
+          # 5) lifetime code -> licensed forever (exit 0)
+          $life = ((python server/license_server.py --code 0) -split ': ')[-1].Trim()
+          python tools/ci_license_redeem.py http://127.0.0.1:8797 $life
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $p = Start-Process -FilePath dist\MapleFlipHunterFriends.exe -ArgumentList "--license-check","reports\lic5.json" -PassThru -Wait
+          "lifetime exit $($p.ExitCode): $(Get-Content reports\lic5.json)"
+          if ($p.ExitCode -ne 0) { exit 1 }
+          python tools/check_license_result.py reports\lic5.json licensed lifetime
           Stop-Process -Id $srv.Id -Force
           Copy-Item dist\MapleFlipHunterFriends.exe reports\MapleFlipHunterFriends-CI-DEMO.exe
 

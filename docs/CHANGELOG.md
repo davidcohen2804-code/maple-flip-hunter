@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.1 — 2026-10-26 (Friends Edition: three licence phases)
+* **Free Trial** 72 h from first activation → **14-Day Activation** (one-time code, 14 days from redemption) →
+  **Lifetime Activation** (one-time code, never expires). All by the server's clock; each code is single-use and
+  bound to the first machine that redeems it; a temporary code never downgrades a lifetime licence.
+* Lock screen headline follows the phase ("Your 3-day free trial has expired." / "Your 14-day activation has
+  expired."), always with davidcohen2804@gmail.com, Copy Email and the code field.
+* Status bar shows the remaining time permanently ("Trial: 2 days 23 h left", "Activation: 13 days 5 h left",
+  "Lifetime licence"), refreshed from the server every 10 minutes.
+* Server: `--code 14` / `--code 0`; token carries the phase (`kind`). Developer edition unchanged.
+* CI: Friends EXE driven through trial → expiry → 14-day code → expiry → lifetime code. 108 unit tests.
+
+
 ## 0.8.0 — 2026-10-26 (Friends Edition: one-file EXE, 3-day trial licence, signed updates)
 * Build edition flag (`maple_flip_hunter/_edition.txt`): developer build unrestricted; **Friends Edition** =
   one-file `MapleFlipHunterFriends.exe` built by `build\windows\build_friends.bat <server> <public key>`.

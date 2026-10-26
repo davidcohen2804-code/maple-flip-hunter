@@ -295,13 +295,16 @@ class MainWindow(QMainWindow):
 
         self.license_client = client
         self.setWindowTitle(self.windowTitle() + " — Friends Edition")
+        self.license_label = QLabel("")
+        self.license_label.setStyleSheet(f"color: {ACCENT}; padding: 0 12px; font-weight: 600;")
+        self.status.addPermanentWidget(self.license_label)
+        self.license_label.setText(client.state().remaining_text)
 
         def tick() -> None:
             client.refresh()
             st = client.state()
             if st.status in ("trial", "licensed"):
-                if st.remaining_s is not None and st.status == "trial":
-                    self.status.showMessage(f"Trial: {st.remaining_s / 3600:.1f} h left", 5000)
+                self.license_label.setText(st.remaining_text)
                 self._maybe_offer_update()
                 return
             self.engine.stop()

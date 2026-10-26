@@ -45,6 +45,17 @@ class LicenseState:
     remaining_s: Optional[float]
     message: str
     online: bool
+    kind: str = "trial"               # trial | activation (14-day code) | lifetime
+
+    @property
+    def remaining_text(self) -> str:
+        if self.kind == "lifetime" and self.status == "licensed":
+            return "Lifetime licence"
+        if self.remaining_s is None:
+            return ""
+        d, h = int(self.remaining_s // 86400), int((self.remaining_s % 86400) // 3600)
+        label = "Trial" if self.kind == "trial" else "Activation"
+        return f"{label}: {d} day{'s' if d != 1 else ''} {h} h left" if d else f"{label}: {h} h {int((self.remaining_s % 3600) // 60)} min left"
 
 
 class LicenseClient:
@@ -183,16 +194,18 @@ class LicenseClient:
         online = bool(self.last_contact and time.time() - self.last_contact < 120)
         if payload is None:
             return LicenseState("unknown", None, None, self.last_error or "not activated yet", online)
+        kind = payload.get("kind", "trial")
         if not clock_ok:
-            return LicenseState("locked", payload.get("exp"), 0, "the system clock was moved back — reconnect to continue", online)
+            return LicenseState("locked", payload.get("exp"), 0, "the system clock was moved back — reconnect to continue", online, kind)
         if self.last_contact and time.time() - self.last_contact > OFFLINE_GRACE_S:
-            return LicenseState("locked", payload.get("exp"), 0, "no contact with the licence server for over 24 hours", online)
+            return LicenseState("locked", payload.get("exp"), 0, "no contact with the licence server for over 24 hours", online, kind)
         st = payload.get("st", "expired")
         exp = payload.get("exp")
         if st == "expired" or (exp is not None and now >= float(exp)):
-            return LicenseState("expired", exp, 0, "trial expired", online)
+            msg = "Your 3-day free trial has expired." if kind == "trial" else "Your 14-day activation has expired."
+            return LicenseState("expired", exp, 0, msg, online, kind)
         remaining = (float(exp) - now) if exp is not None else None
-        return LicenseState(st, exp, remaining, "ok", online)
+        return LicenseState(st, exp, remaining, "ok", online, kind)
 
     def ensure(self) -> LicenseState:
         """Start-up path: refresh from the server (or activate the first time), then decide."""

@@ -146,3 +146,35 @@ def test_developer_edition_is_unrestricted(monkeypatch):
     assert edition.edition() == "developer" and not edition.is_friends()
     monkeypatch.setenv("MFH_EDITION", "friends")
     assert edition.is_friends()
+
+
+def test_three_phases_trial_14day_lifetime(server, tmp_path, monkeypatch):
+    """Free trial 72 h → lock → one-time 14-day code → lock after 14 days → lifetime code; server clock decides;
+    codes are single-use and bound to one machine; a lifetime licence is never downgraded."""
+    c = _client(server, tmp_path)
+    st = c.ensure()
+    assert st.status == "trial" and st.kind == "trial" and st.remaining_text.startswith("Trial: 2 days 23 h")
+    real = time.time
+    shift = [0.0]
+    monkeypatch.setattr(srv.time, "time", lambda: real() + shift[0])
+    shift[0] = 73 * 3600                                    # phase 1 over
+    c.refresh()
+    assert c.state().status == "expired" and "3-day free trial" in c.state().message
+    code14 = srv.make_code(14)
+    ok, _ = c.redeem(code14)
+    st = c.state()
+    assert ok and st.status == "licensed" and st.kind == "activation" and st.remaining_text.startswith("Activation: 13 days 23 h")
+    assert not c.redeem(code14)[0]                           # single-use
+    shift[0] = 73 * 3600 + 15 * 86400                        # phase 2 over
+    c.refresh()
+    st = c.state()
+    assert st.status == "expired" and st.kind == "activation" and "14-day activation" in st.message
+    life = srv.make_code(0)
+    ok, _ = c.redeem(life)
+    st = c.state()
+    assert ok and st.status == "licensed" and st.kind == "lifetime" and st.expires_at is None and st.remaining_text == "Lifetime licence"
+    shift[0] = 73 * 3600 + 400 * 86400                       # a year later: still licensed
+    c.refresh()
+    assert c.state().status == "licensed" and c.state().kind == "lifetime"
+    ok, msg = c.redeem(srv.make_code(14))                    # a temporary code never downgrades a lifetime licence
+    assert not ok and "lifetime" in msg

@@ -51,8 +51,9 @@ def main(argv: list[str] | None = None) -> int:
 
             out = argv[argv.index("--license-check") + 1]
             with open(out, "w", encoding="utf-8") as f:
-                json.dump({"status": st.status, "expires_at": st.expires_at, "remaining_s": st.remaining_s,
-                           "message": st.message, "online": st.online, "machine": license_client.machine[:12]}, f)
+                json.dump({"status": st.status, "kind": st.kind, "expires_at": st.expires_at, "remaining_s": st.remaining_s,
+                           "remaining_text": st.remaining_text, "message": st.message, "online": st.online,
+                           "machine": license_client.machine[:12]}, f)
             return 0 if st.status in ("trial", "licensed") else 3
         if st.status not in ("trial", "licensed"):
             dlg = LockDialog(license_client, reason=st.message)

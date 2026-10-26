@@ -3,7 +3,8 @@
 Run on your own machine/VPS (put it behind HTTPS, e.g. Caddy/nginx):
     python server/license_server.py --init            # creates keys + database once (prints the PUBLIC key)
     python server/license_server.py --serve 8787      # start
-    python server/license_server.py --code 30         # new activation code worth 30 days (0 = lifetime)
+    python server/license_server.py --code 14         # one-time 14-day activation code
+    python server/license_server.py --code 0          # one-time LIFETIME activation code
     python server/license_server.py --list            # machines, trial start, status
     python server/license_server.py --update 0.8.1 https://your.host/MapleFlipHunterFriends.exe path\\to\\that.exe
                                                       # publish a signed update manifest
@@ -78,13 +79,17 @@ def token_for(c: sqlite3.Connection, key: Ed25519PrivateKey, machine: str, versi
         c.execute("UPDATE machines SET last_seen=?, version=? WHERE machine=?", (now, version, machine))
         first, licensed_until = float(row["first_seen"]), row["licensed_until"]
     c.commit()
-    if licensed_until is not None and (licensed_until == 0 or licensed_until > now):
-        st, exp = "licensed", (None if licensed_until == 0 else float(licensed_until))
+    if licensed_until is not None and licensed_until == 0:
+        st, exp, kind = "licensed", None, "lifetime"
+    elif licensed_until is not None and licensed_until > now:
+        st, exp, kind = "licensed", float(licensed_until), "activation"
+    elif licensed_until is not None:                       # a temporary activation that ran out
+        st, exp, kind = "expired", float(licensed_until), "activation"
     else:
         trial_end = first + TRIAL_SECONDS
-        st, exp = ("trial", trial_end) if now < trial_end else ("expired", trial_end)
-    payload = {"m": machine, "st": st, "exp": exp, "iat": now, "ver": 1}
-    return {"token": sign(payload, key), "server_time": now, "status": st, "expires_at": exp}
+        st, exp, kind = ("trial", trial_end, "trial") if now < trial_end else ("expired", trial_end, "trial")
+    payload = {"m": machine, "st": st, "exp": exp, "iat": now, "kind": kind, "ver": 1}
+    return {"token": sign(payload, key), "server_time": now, "status": st, "expires_at": exp, "kind": kind}
 
 
 def redeem(c: sqlite3.Connection, machine: str, code: str) -> tuple[bool, str]:
@@ -93,8 +98,13 @@ def redeem(c: sqlite3.Connection, machine: str, code: str) -> tuple[bool, str]:
         return False, "unknown activation code"
     if row["redeemed_by"] and row["redeemed_by"] != machine:
         return False, "this code was already used on another computer"
+    if row["redeemed_by"] == machine:
+        return False, "this code was already used"
     now = time.time()
     until = 0 if int(row["days"]) == 0 else now + int(row["days"]) * 86400
+    cur = c.execute("SELECT licensed_until FROM machines WHERE machine=?", (machine,)).fetchone()
+    if cur is not None and cur["licensed_until"] == 0 and until != 0:
+        return False, "this computer already has a lifetime licence"
     c.execute("INSERT INTO machines(machine, first_seen, last_seen, version, licensed_until) VALUES (?,?,?,?,?) "
               "ON CONFLICT(machine) DO UPDATE SET licensed_until=excluded.licensed_until, last_seen=excluded.last_seen",
               (machine, now, now, "", until))
