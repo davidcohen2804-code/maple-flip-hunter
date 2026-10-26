@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.11.0 — 2026-10-26 (back to the original way of working: alerts only, no physical scanning)
+* `physical_features_enabled` (default **false**, the distributed build): the program is the **Market Scanner only**.
+  No FM Watcher auto-start (`source_fmwatcher_autostart` now defaults to false as well), no Physical Scanner / Free
+  Spot Detector tabs, no screen capture, no local-scan adapter, FM Watcher rows hidden from Settings. The code stays
+  in the repository; setting the flag to true in settings.json brings everything back (tests run both modes).
+* Kept unchanged: maplestory.watch as the live source (Club FM / cozy only with permission), pricing, Deal
+  Confidence, price/profit filters, profit-band sounds and the floating deal card, the performance fixes, Scanner
+  Health with recovery, Friends Edition and licensing.
+* Tests: default build has no physical features (nothing launched, nothing captured, single window); a stand-in
+  game process keeps running untouched — alive, no child processes, no `Popen`, no `grabWindow` — while a deal is
+  found and alerted. 131 unit tests; the EXE gate with an FM Watcher store still runs with the flag enabled.
+
+
 ## 0.10.1 — 2026-10-26 (FIX: Physical Scanner "scanner stopped" / empty profit)
 * Root cause: rows loaded from history (or scanned while the engine was idle) never received a valuation, and the
   text baked into the cell at load time said "scanner stopped" because the window is built before the engine starts;

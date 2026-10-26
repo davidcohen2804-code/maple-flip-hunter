@@ -30,7 +30,7 @@ def app():
 
 
 def test_spots_tab_end_to_end(app, tmp_path):
-    s = Settings(source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_autostart=False, spots_vacate_confirm_s=5)
+    s = Settings(physical_features_enabled=True, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_autostart=False, spots_vacate_confirm_s=5)
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     played = []
     real = n.play

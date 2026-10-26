@@ -127,7 +127,7 @@ class Settings(BaseModel):
     # (watcher_data_v2.json / my_scans.csv) — your own scans, no server access, no permission needed.
     source_fmwatcher_enabled: bool = True
     source_fmwatcher_dir: str = Field("", description="Folder where FM Watcher's start.bat lives (empty = off)")
-    source_fmwatcher_autostart: bool = Field(True, description="Start FM Watcher hidden when Maple Flip Hunter starts; stop it on quit if we started it")
+    source_fmwatcher_autostart: bool = Field(False, description="Start FM Watcher hidden when Maple Flip Hunter starts; stop it on quit if we started it (only with physical_features_enabled)")
     source_fmwatcher_interval_s: float = Field(5.0, ge=2.0)
     source_fmwatcher_max_age_s: int = Field(1800, ge=60, description="Ignore scans older than this")
     # cozy.markets: the public JSON answers browsers but returns HTTP 403 to this app (Cloudflare bot
@@ -139,6 +139,11 @@ class Settings(BaseModel):
     retention_listings_days: int = 7
     retention_events_days: int = 30
     retention_notifications_days: int = 30
+
+    # --- Physical features (OFF in the distributed build) ----------------------
+    # False = pure alert system: no FM Watcher auto-start, no Physical Scanner / Free Spot Detector tabs, no screen
+    # capture, no local-scan adapter. The code stays in the repository; set true in settings.json to re-enable.
+    physical_features_enabled: bool = False
 
     # --- Free Spot Detector ----------------------------------------------
     spots_map_name: str = Field("Free Market", description="Map being monitored (as you name it)")

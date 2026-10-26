@@ -116,7 +116,7 @@ def test_own_scan_feeds_detection_sound_and_dedupes_against_msw(tmp_path):
     fm_dir.mkdir()
     _write(fm_dir / "watcher_data_v2.json", _store([
         ("NoobTrader", "Hat Accuracy Scroll: Intermediate", 8_000, 1, 1, False, "FM3", 7, None, 5)]))
-    s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_cozy_enabled=False,
+    s = Settings(physical_features_enabled=True, min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_cozy_enabled=False,
                  source_fmwatcher_dir=str(fm_dir))
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     played = []
@@ -183,7 +183,7 @@ def test_adapter_is_registered_and_polls_after_settings_save(tmp_path):
     fm = tmp_path / "FMWatcher"
     fm.mkdir()
     shutil.copy(Path(__file__).resolve().parents[1] / "fixtures" / "fmwatcher_real_sample.json", fm / "watcher_data_v2.json")
-    s = Settings(source_cozy_enabled=False, source_msw_enabled=False)                 # no folder yet
+    s = Settings(physical_features_enabled=True, source_cozy_enabled=False, source_msw_enabled=False)                 # no folder yet
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     eng = MarketEngine(s, Database(":memory:"), n)
     assert not any(isinstance(a, FMWatcherAdapter) for a in eng.adapters)

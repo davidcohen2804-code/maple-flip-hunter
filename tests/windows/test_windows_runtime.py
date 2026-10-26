@@ -284,7 +284,7 @@ def test_fmwatcher_real_sample_goes_online_in_the_engine_on_windows(tmp_path):
     fm = tmp_path / "FMWatcher" / "FMWatcher"
     fm.mkdir(parents=True)
     shutil.copy(Path(__file__).resolve().parents[1] / "fixtures" / "fmwatcher_real_sample.json", fm / "watcher_data_v2.json")
-    s = Settings(source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(fm),
+    s = Settings(physical_features_enabled=True, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(fm),
                  source_fmwatcher_max_age_s=10 * 365 * 86400)
     eng = MarketEngine(s, Database(":memory:"), Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path)))
     eng.start()

@@ -178,7 +178,7 @@ def test_fmwatcher_crash_is_detected_and_restarted_with_a_cap(tmp_path, monkeypa
     folder = tmp_path / "FMWatcher"
     folder.mkdir()
     (folder / "launcher.py").write_text("import time\ntime.sleep(1.0)\n", encoding="utf-8")   # exits by itself = crash
-    s = Settings(source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(folder), source_fmwatcher_autostart=False)
+    s = Settings(physical_features_enabled=True, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(folder), source_fmwatcher_autostart=False)
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     w = MainWindow(MarketEngine(s, Database(":memory:"), n), s, n)
     w.show()

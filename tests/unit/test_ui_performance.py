@@ -50,7 +50,8 @@ def _pump(app, seconds):
 
 
 def test_thousands_of_rows_do_not_stall_the_ui(app, tmp_path):
-    s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_cozy_enabled=False, source_msw_enabled=False)
+    s = Settings(physical_features_enabled=True, min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000,
+                 source_cozy_enabled=False, source_msw_enabled=False)
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     eng = MarketEngine(s, Database(":memory:"), n, adapters=[])
     w = MainWindow(eng, s, n)
@@ -113,7 +114,7 @@ def test_start_stop_buttons_respond_during_load(app, tmp_path, monkeypatch):
     (folder / "launcher.py").write_text(
         "import subprocess, sys, os\nsubprocess.call([sys.executable, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'watcher.py')])\n",
         encoding="utf-8")
-    s = Settings(source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(folder), source_fmwatcher_autostart=False)
+    s = Settings(physical_features_enabled=True, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(folder), source_fmwatcher_autostart=False)
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     eng = MarketEngine(s, Database(":memory:"), n)
     w = MainWindow(eng, s, n)

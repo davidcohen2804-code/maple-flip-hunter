@@ -258,6 +258,7 @@ class SettingsDialog(QDialog):
         warn.setObjectName("subtitle")
         f4.addRow(warn)
         self.fmw_dir = QLineEdit(s.source_fmwatcher_dir)
+        self._physical_widgets: list = []
         self.fmw_dir.setPlaceholderText(r"e.g. C:\Users\you\Documents\FMWatcher  (folder with start.bat)")
         fmw_row = QHBoxLayout()
         fmw_row.addWidget(self.fmw_dir, 1)
@@ -267,15 +268,24 @@ class SettingsDialog(QDialog):
         fmw_host = QWidget()
         fmw_host.setLayout(fmw_row)
         f4.addRow("FM Watcher folder (your own scans)", fmw_host)
+        self._physical_widgets.append(fmw_host)
         self.cb_fmw_auto = QCheckBox("Start FM Watcher automatically with Maple Flip Hunter (hidden, no console window) "
                                      "and stop it on quit")
         self.cb_fmw_auto.setChecked(s.source_fmwatcher_autostart)
         f4.addRow(self.cb_fmw_auto)
+        self._physical_widgets.append(self.cb_fmw_auto)
         fmw_note = QLabel("Run Club FM's FM Watcher while you browse the FM; its local watcher_data_v2.json / my_scans.csv "
                           "become a live source here. Nothing is sent anywhere.")
         fmw_note.setObjectName("subtitle")
         fmw_note.setWordWrap(True)
         f4.addRow(fmw_note)
+        self._physical_widgets.append(fmw_note)
+        if not s.physical_features_enabled:
+            for wdg in self._physical_widgets:
+                wdg.hide()
+                lbl = f4.labelForField(wdg)
+                if lbl is not None:
+                    lbl.hide()
         note = QLabel("Source changes take effect after Stop → Start.")
         note.setObjectName("subtitle")
         f4.addRow(note)

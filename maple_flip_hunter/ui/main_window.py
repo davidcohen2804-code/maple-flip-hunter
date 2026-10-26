@@ -75,7 +75,7 @@ class MainWindow(QMainWindow):
         self.bridge.alert.connect(self.on_alert)
         self.bridge.health.connect(self.on_health)
         self.bridge.availability.connect(self.on_availability)
-        self.bridge.valued.connect(lambda lst, val, level: self.physical.on_valued(lst, val, level))
+        self.bridge.valued.connect(lambda lst, val, level: self.physical.on_valued(lst, val, level) if self.physical else None)
         self.bridge.listing.connect(self.on_listing)
         notifier.toast_callback = None  # toasts are handled from the alert signal on the UI thread
         if not notifier.attach_gui():    # creates the GUI-thread audio proxy so scanner-thread alerts can play
@@ -96,7 +96,8 @@ class MainWindow(QMainWindow):
         self.tick.start(1000)
         self.fmw_launcher = FMWatcherLauncher(self.settings.source_fmwatcher_dir, log_dir())
         self._fmw_status_text = ""
-        QTimer.singleShot(1500, self.autostart_fmwatcher)   # after the window is up
+        if self.settings.physical_features_enabled:
+            QTimer.singleShot(1500, self.autostart_fmwatcher)   # after the window is up (physical features only)
         self._new_listings = 0
 
     # ------------------------------------------------------------- layout
@@ -260,13 +261,18 @@ class MainWindow(QMainWindow):
         root.addWidget(split, 1)
         self._restore_layout()
 
-        self.tabs = QTabWidget()
-        self.tabs.addTab(central, "Market")
-        self.physical = PhysicalScannerTab(self)
-        self.tabs.addTab(self.physical, "Physical Scanner")
-        self.spots = SpotsTab(self)
-        self.tabs.addTab(self.spots, "Free Spot Detector")
-        self.setCentralWidget(self.tabs)
+        self.physical = None
+        self.spots = None
+        if self.settings.physical_features_enabled:
+            self.tabs = QTabWidget()
+            self.tabs.addTab(central, "Market")
+            self.physical = PhysicalScannerTab(self)
+            self.tabs.addTab(self.physical, "Physical Scanner")
+            self.spots = SpotsTab(self)
+            self.tabs.addTab(self.spots, "Free Spot Detector")
+            self.setCentralWidget(self.tabs)
+        else:
+            self.setCentralWidget(central)      # Market Scanner is the whole program
         self.status = self.statusBar()
         self.status.showMessage("Ready. Press Start scanner.")
         self._set_state("OFFLINE")
@@ -355,6 +361,8 @@ class MainWindow(QMainWindow):
         s = self.settings
         if not (s.source_fmwatcher_autostart and s.source_fmwatcher_dir.strip()):
             return
+        if not self.settings.physical_features_enabled:
+            return
         if getattr(self, "physical", None) is not None and self.physical.stopped_by_user:
             return                                   # the user pressed Stop Scanning: no automatic restart
         if str(self.fmw_launcher.folder or "") != s.source_fmwatcher_dir.strip():
@@ -398,7 +406,7 @@ class MainWindow(QMainWindow):
         self.status.showMessage(f"FM Watcher restarted automatically ({msg})" if ok else f"FM Watcher restart failed — {msg}", 10000)
 
     def _refresh_fmw_status(self) -> None:
-        if not self.settings.source_fmwatcher_dir.strip():
+        if not self.settings.physical_features_enabled or not self.settings.source_fmwatcher_dir.strip():
             self._fmw_status_text = ""
             return
         self._watch_fmwatcher_process()
@@ -482,6 +490,8 @@ class MainWindow(QMainWindow):
         self._refresh_stats()
 
     def _backfill_physical(self) -> None:
+        if self.physical is None:
+            return
         n = self.physical.backfill_valuations()
         if n:
             log.info("physical scanner: re-valuing %d stored scans without a valuation", n)
@@ -557,11 +567,13 @@ class MainWindow(QMainWindow):
     # -------------------------------------------------------------- events
     def on_listing(self, lst, kind: str) -> None:
         self._new_listings += 1
-        self.physical.on_listing(lst, kind)
+        if self.physical is not None:
+            self.physical.on_listing(lst, kind)
 
     def on_opportunity(self, opp: Opportunity) -> None:
         self.model.upsert(opp)
-        self.physical.on_opportunity(opp)
+        if self.physical is not None:
+            self.physical.on_opportunity(opp)
 
     def on_alert(self, opp: Opportunity, level: str, title: str, body: str) -> None:
         if opp.listing.source != "test":
@@ -660,7 +672,7 @@ class MainWindow(QMainWindow):
             self._backfilled_once = True
             QTimer.singleShot(3000, self._backfill_physical)
         self.model.refresh_ages()
-        if int(time.time()) % 3 == 0:
+        if self.physical is not None and int(time.time()) % 3 == 0:
             self.physical.refresh_ages()
         if e.scanner_state == "LIVE":
             self.status.showMessage(f"LIVE · {e.metrics.listings_ingested:,} rows ingested · {e.metrics.evaluations:,} evaluated · "

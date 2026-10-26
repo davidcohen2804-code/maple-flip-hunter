@@ -62,7 +62,7 @@ class MarketEngine:
         if s.source_cozy_enabled:
             out.append(CozyAdapter(interval_s=s.source_cozy_interval_s, max_shops_per_cycle=s.source_cozy_max_shops_per_cycle,
                                    token=s.source_cozy_token))
-        if s.source_fmwatcher_enabled and s.source_fmwatcher_dir.strip():
+        if s.physical_features_enabled and s.source_fmwatcher_enabled and s.source_fmwatcher_dir.strip():
             out.append(FMWatcherAdapter(interval_s=s.source_fmwatcher_interval_s, directory=s.source_fmwatcher_dir.strip(),
                                         max_age_s=s.source_fmwatcher_max_age_s))
         if s.source_msw_enabled:
