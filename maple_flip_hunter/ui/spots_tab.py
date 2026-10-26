@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QHBoxLay
 
 from ..spots import MonitorConfig, SpotMonitor, SpotRegistry
 from ..spots.monitor import SpotEvent
+from .flow_layout import FlowLayout
 from .table_model import fmt_age
 from .theme import ACCENT, GREEN, MUTED, RED, YELLOW
 
@@ -33,7 +34,7 @@ class SpotView(QLabel):
     def __init__(self, tab: "SpotsTab") -> None:
         super().__init__()
         self.tab = tab
-        self.setMinimumHeight(240)
+        self.setMinimumHeight(140)
         self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet("background:#0b0f14; border:1px solid #2a3442; border-radius:6px;")
         self._frame: Optional[np.ndarray] = None
@@ -122,6 +123,8 @@ class SpotsTab(QWidget):
         self.status_text = QLabel("Press Start Monitoring with the game visible on screen.")
         self.status_text.setObjectName("subtitle")
         self.status_text.setWordWrap(True)
+        from PySide6.QtWidgets import QSizePolicy
+        self.status_text.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         top.addWidget(self.status_text, 1)
         self.btn_start = QPushButton("▶  Start Monitoring")
         self.btn_start.setStyleSheet(f"QPushButton {{ background: {GREEN}; color: #0f1419; font-weight: 700; padding: 8px 18px; }}")
@@ -134,11 +137,13 @@ class SpotsTab(QWidget):
         top.addWidget(self.btn_stop)
         root.addLayout(top)
 
-        scope = QHBoxLayout()
+        scope_host = QWidget()
+        scope = FlowLayout(scope_host, h_spacing=8)          # wraps on narrow windows (never forces a wide minimum)
         scope.addWidget(QLabel("Map"))
         self.map_edit = QLineEdit(self.cfg.map_name)
         self.map_edit.setPlaceholderText("Free Market / Kerning City Construction Site")
-        scope.addWidget(self.map_edit, 2)
+        self.map_edit.setMinimumWidth(160)
+        scope.addWidget(self.map_edit)
         scope.addWidget(QLabel("FM room"))
         self.room_spin = QSpinBox()
         self.room_spin.setRange(0, 99)
@@ -161,11 +166,12 @@ class SpotsTab(QWidget):
         scope.addWidget(QLabel("Channels to watch"))
         self.channels_edit = QLineEdit(self._scopes_to_text())
         self.channels_edit.setPlaceholderText("e.g. 1-5, 7, 12  (empty = all)")
-        scope.addWidget(self.channels_edit, 1)
+        self.channels_edit.setMinimumWidth(140)
+        scope.addWidget(self.channels_edit)
         self.btn_apply = QPushButton("Apply")
         self.btn_apply.clicked.connect(self.apply_scope)
         scope.addWidget(self.btn_apply)
-        root.addLayout(scope)
+        root.addWidget(scope_host)
 
         split = QSplitter(Qt.Vertical)
         self.view = SpotView(self)
@@ -183,8 +189,11 @@ class SpotsTab(QWidget):
         for i, w in ((1, 70), (2, 90), (3, 80), (4, 70), (5, 95), (6, 90), (7, 160)):
             hh.setSectionResizeMode(i, QHeaderView.Fixed)
             self.table.setColumnWidth(i, w)
+        self.table.setMinimumWidth(300)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._table_menu)
+        self.table.setMinimumHeight(60)
         bl.addWidget(self.table, 3)
         right = QVBoxLayout()
         lbl = QLabel("RECENT FREE SPOTS / HISTORY")
@@ -196,6 +205,7 @@ class SpotsTab(QWidget):
         self.filter.currentIndexChanged.connect(self.refresh_lists)
         right.addWidget(self.filter)
         self.history = QTableWidget(0, 3)
+        self.history.setMinimumHeight(60)
         self.history.setHorizontalHeaderLabels(["When", "Event", "Spot"])
         self.history.verticalHeader().setVisible(False)
         self.history.setEditTriggers(QAbstractItemView.NoEditTriggers)
@@ -355,6 +365,13 @@ class SpotsTab(QWidget):
         menu.exec(self.table.viewport().mapToGlobal(pos))
 
     def refresh_lists(self) -> None:
+        try:
+            self._refresh_lists()
+        except Exception as exc:  # noqa: BLE001  (e.g. database closed during shutdown)
+            if "closed database" not in str(exc):
+                raise
+
+    def _refresh_lists(self) -> None:
         want = self.filter.currentText()
         spots = [s for s in self.registry.in_scope(self.cfg.map_name, self.cfg.room, self.cfg.channel) if want == "All" or s.rating == want]
         spots.sort(key=lambda s: ({"PRIME": 0, "GOOD": 1}.get(s.rating, 2), -s.vacate_count))
