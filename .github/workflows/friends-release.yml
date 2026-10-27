@@ -13,6 +13,10 @@ on:
       public_key:
         description: "Server public key (hex, from public_key.txt or /v1/health)"
         required: true
+      draft:
+        description: "Draft release (visible only to the repo owner, not public)"
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       server_url:
@@ -91,4 +95,6 @@ jobs:
           $tag = "friends-v$v"
           $notes = "Maple Flip Hunter - Friends Edition v$v`n`nLicence server: ${{ inputs.server_url }}`n`n" + (Get-Content dist\MapleFlipHunterFriends.version.txt -Raw) + "`n`nFirst run: Windows SmartScreen may show 'Windows protected your PC' (unsigned) -> More info -> Run anyway. 3-day free trial, then an activation code from the developer."
           gh release delete $tag --yes --cleanup-tag 2>$null
-          gh release create $tag dist\MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.version.txt --title "Friends Edition v$v" --notes $notes --latest
+          $extra = @()
+          if ("${{ inputs.draft }}" -eq "true") { $extra = @("--draft") } else { $extra = @("--latest") }
+          gh release create $tag dist\MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.version.txt --title "Friends Edition v$v" --notes $notes @extra
