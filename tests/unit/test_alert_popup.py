@@ -76,7 +76,7 @@ def test_popup_contents_copy_mute_and_stays_until_ok(app, tmp_path):
     assert pop.windowFlags() & Qt.WindowStaysOnTopHint and pop.windowFlags() & Qt.WindowDoesNotAcceptFocus
     assert AlertPopup.open_count() == 1 and pop.isVisible()
     labels = " ".join(lbl.text() for lbl in pop.findChildren(__import__("PySide6.QtWidgets", fromlist=["QLabel"]).QLabel))
-    assert "Bow Attack Scroll 60%" in labels and "8,000" in labels and "estimated net profit" in labels
+    assert "Bow Attack Scroll 60%" in labels and "8,000" in labels and "net profit" in labels and "quick sale" in labels
     assert "not guaranteed" in labels and "CH 24" in labels and "ShopX" in labels and "alert in 12 ms" in labels
     pop.btn_copy.click()
     assert QApplication.clipboard().text() == "CH 24 · FM 25 · Shop: ShopX"

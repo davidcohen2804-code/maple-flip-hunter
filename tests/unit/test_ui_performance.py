@@ -102,7 +102,7 @@ def test_stats_tick_never_waits_on_the_engine_db_lock(app, tmp_path):
     dt = (time.perf_counter() - t0) * 1000
     released.set(); t.join()
     assert dt < 200, f"UI tick blocked on the DB lock for {dt:.0f} ms"
-    assert "2" in w.stat_labels["coverage"].text()
+    assert "2" in w.stats["coverage"]
     w.tray.hide(); w.close()
 
 

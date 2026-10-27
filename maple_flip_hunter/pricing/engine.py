@@ -85,8 +85,10 @@ class PricingEngine:
         ref_basis = ""
         if ev.sold_median and ev.sold_count >= self.MIN_SOLD_FOR_REFERENCE:
             ref, ref_basis = float(ev.sold_median), f"median of {ev.sold_count} completed sales"
+            v.sold_price, v.sold_samples, v.sold_basis = int(ev.sold_median), int(ev.sold_count), ref_basis
         elif len(sold_prices) >= 3:
             ref, ref_basis = median(sold_prices), f"median of {len(sold_prices)} observed sales (thin)"
+            v.sold_price, v.sold_samples, v.sold_basis = int(median(sold_prices)), len(sold_prices), ref_basis
             v.risks.append("few completed sales - valuation based on a thin sample")
         elif ev.ask_median and ev.ask_count >= self.MIN_ASKS_FOR_REFERENCE:
             ref, ref_basis = float(ev.ask_median) * 0.90, f"90% of median asking price ({ev.ask_count} asks, no sale data)"

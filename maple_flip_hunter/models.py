@@ -125,6 +125,10 @@ class Valuation(BaseModel):
     unique_sellers: int = 0                  # distinct sellers among those samples
     price_spread: Optional[float] = None     # (p75 − p25) / median of the samples, when ≥ 4 samples
     confidence_reason: str = ""              # one line: why this grade
+    # VERIFIED completed-sale price only (never an asking price, never an estimate). None = N/A in the table.
+    sold_price: Optional[int] = None
+    sold_samples: int = 0
+    sold_basis: str = ""                     # where the completed-sale price comes from
     explanation: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
 

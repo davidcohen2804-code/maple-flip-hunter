@@ -53,10 +53,12 @@ class AlertPopup(QWidget):
         head.setWordWrap(True)
         v.addWidget(head)
         net = f"{val.net_profit:+,}" if val.net_profit is not None else "n/a"
-        v.addWidget(QLabel(f"Buy <b>{l.price:,}</b> mesos &nbsp;·&nbsp; estimated net profit <b style='color:{GREEN}'>{net}</b> "
-                           f"(quick sale {val.quick:,}; not guaranteed)" if val.quick else f"Buy <b>{l.price:,}</b> mesos"))
+        price = QLabel(f"Buy <b>{l.price:,}</b> mesos &nbsp;·&nbsp; quick sale <b>{val.quick:,}</b> (estimate) &nbsp;·&nbsp; "
+                       f"net profit <b style='color:{GREEN}'>{net}</b>" if val.quick else f"Buy <b>{l.price:,}</b> mesos")
+        price.setWordWrap(True)
+        v.addWidget(price)
         self.location_text = f"{l.location} · Shop: {l.seller}"
-        loc = QLabel(f"📍 <b>{html.escape(self.location_text)}</b>")
+        loc = QLabel(f"📍 <b>{html.escape(l.location)}</b> &nbsp;·&nbsp; seller <b>{html.escape(l.seller)}</b>")
         loc.setWordWrap(True)
         v.addWidget(loc)
         self.avail = QLabel("Availability: UNVERIFIED — checking in the background…")
@@ -99,7 +101,8 @@ class AlertPopup(QWidget):
         else:
             self.avail.setText(f"Availability: UNVERIFIED — {html.escape(note)}")
             self.avail.setStyleSheet(f"color: {MUTED};")
-        self.adjustSize()
+        self.layout().activate()
+        self.setFixedHeight(self.sizeHint().height())
 
     def copy_location(self) -> None:
         QApplication.clipboard().setText(self.location_text)
@@ -107,7 +110,9 @@ class AlertPopup(QWidget):
 
     def show_stacked(self) -> None:
         AlertPopup._open.append(self)
+        self.layout().activate()
         self.adjustSize()
+        self.setFixedHeight(self.sizeHint().height())     # wrapped labels decide the height; nothing overlaps
         scr = QGuiApplication.primaryScreen()
         geo = scr.availableGeometry() if scr else None
         if geo is not None:

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.14.0 — 2026-10-27 (final simple interface — same in Developer and Friends Edition)
+* Main screen: three numbers (Min Buy Price, Max Buy Price, Min Profit — mesos, saved automatically, applied to
+  the live scanner and the table at once), one Start/Stop button, state LIVE / STOPPED / ERROR (click = scanner
+  health), a small Settings button for everything advanced (sounds, bands, confidence, sources, startup).
+* Deals table: Item · Buy Price · Sold Price · Quick Sale · Net Profit · ROI % · Channel · Room / Map · Seller · Age.
+  Sold Price is a VERIFIED completed-sale price only (`Valuation.sold_price`, from ≥ 5 completed sales or ≥ 3
+  observed sold rows) and shows N/A otherwise — never an asking price, never an estimate. Quick Sale and Net Profit
+  are labelled estimates. Default order: best fresh deals first, stale/gone rows below. Confidence in the tooltip.
+  Soft green tint for good deals, orange for UNCERTAIN, grey + "stale"/"gone" for old or verified-gone rows.
+* Details moved off the main screen: double-click a row opens the full breakdown (with Copy seller / Copy location).
+* Status bar: one plain line (sources online, newest data, new listings, deals, alerts); ERROR with the source name
+  when nothing is online.
+* Alert card: buy · quick sale (estimate) · net profit · channel · room · seller; wrapped text, no overlaps.
+* Pricing, alerts, sounds, Deal Confidence gate, dedupe: unchanged. Tests cover 1280×720 (no horizontal scroll).
+
 ## 0.13.0 — 2026-10-26 (licence server on Cloudflare Workers + D1 — zero-cost hosting)
 * `server/cloudflare/worker.js` + `schema.sql` + `wrangler.toml`: the same licence model as the Python reference
   server (72 h trial, one-time 14-day / lifetime codes bound to one machine, revoke, signed update manifest,

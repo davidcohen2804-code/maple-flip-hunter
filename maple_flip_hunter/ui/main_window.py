@@ -8,9 +8,9 @@ from typing import Optional
 from PySide6.QtCore import QByteArray, QRect, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QColor, QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
-from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-                               QMainWindow, QMenu, QPushButton, QSlider, QSplitter, QSystemTrayIcon, QTableView,
-                               QSizePolicy, QTabWidget, QTextBrowser, QVBoxLayout, QWidget, QComboBox, QCheckBox)
+from PySide6.QtWidgets import (QApplication, QDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+                               QMainWindow, QMenu, QPushButton, QSpinBox, QSystemTrayIcon, QTableView,
+                               QSizePolicy, QTabWidget, QTextBrowser, QVBoxLayout, QWidget, QComboBox)
 
 from .. import APP_NAME, USER_AGENT, __version__
 from ..collector.engine import MarketEngine
@@ -29,7 +29,7 @@ from .health_dialog import HealthDialog
 from .flow_layout import FlowLayout
 from .settings_dialog import SettingsDialog, fit_on_screen
 from .startup import set_run_on_startup
-from .table_model import OpportunityFilter, OpportunityModel, fmt_age
+from .table_model import COLUMNS, OpportunityFilter, OpportunityModel, fmt_age
 from .theme import ACCENT, GREEN, LEVEL_COLORS, MUTED, QSS, RED, STATE_COLORS, YELLOW
 
 log = logging.getLogger(__name__)
@@ -102,60 +102,74 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------- layout
     def _build(self) -> None:
+        """Simple main screen: three numbers → Start → alerts. Everything else is in Settings or on double-click."""
         central = QWidget()
+        self.central = central
         root = QVBoxLayout(central)
-        root.setContentsMargins(16, 14, 16, 12)
-        root.setSpacing(12)
+        root.setContentsMargins(16, 12, 16, 10)
+        root.setSpacing(10)
 
-        # header
-        header_host = QWidget()
-        header = FlowLayout(header_host, h_spacing=10)        # buttons wrap under the title on narrow windows
+        # ---- row 1: title · state · Start/Stop · Settings
+        top = QHBoxLayout()
+        top.setSpacing(10)
         title = QLabel("MAPLE FLIP HUNTER")
         title.setObjectName("title")
         title.setMinimumWidth(0)
-        header.addWidget(title)
-        self.state_pill = QLabel("OFFLINE")
+        title.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        top.addWidget(title, 1)
+        self.state_pill = QLabel("STOPPED")
         self.state_pill.setObjectName("pill")
-        header.addWidget(self.state_pill)
-        self.btn_start = QPushButton("▶  Start scanner")
+        self.state_pill.setToolTip("Scanner state — click for scanner health")
+        self.state_pill.setCursor(Qt.PointingHandCursor)
+        self.state_pill.mousePressEvent = lambda _e: HealthDialog(self).exec()     # type: ignore[assignment]
+        top.addWidget(self.state_pill)
+        self.btn_start = QPushButton("▶  Start")
         self.btn_start.setObjectName("primary")
+        self.btn_start.setMinimumWidth(120)
         self.btn_start.clicked.connect(self.toggle_scanner)
-        self.btn_test = QPushButton("🔊  Test alarm")
-        self.btn_test.clicked.connect(self._test_alarm)
         self.btn_settings = QPushButton("⚙  Settings")
+        self.btn_settings.setToolTip("Advanced settings: sounds, profit bands, deal confidence, sources, startup")
         self.btn_settings.clicked.connect(self.open_settings)
-        self.btn_health = QPushButton("🩺  Health")
-        self.btn_health.clicked.connect(lambda: HealthDialog(self).exec())
-        for b in (self.btn_test, self.btn_settings, self.btn_health, self.btn_start):
-            header.addWidget(b)
-        root.addWidget(header_host)
+        top.addWidget(self.btn_start)
+        top.addWidget(self.btn_settings)
+        root.addLayout(top)
 
-        # stats strip
-        strip = Panel()
-        g = QGridLayout(strip)
-        g.setContentsMargins(8, 8, 8, 8)
-        g.setHorizontalSpacing(8)
-        self.stat_labels: dict[str, QLabel] = {}
-        for i, (key, label) in enumerate([
-            ("sources", "Connected sources"), ("update", "Latest source update"), ("age", "Newest data age"),
-            ("new", "New listings (session)"), ("latency", "Avg source→alert latency"),
-            ("analysis", "Avg local analysis"), ("opps", "Opportunities (session)"), ("coverage", "Coverage"),
-        ]):
+        # ---- row 2: the three numbers that matter (wrap on narrow windows)
+        header_host = QWidget()
+        header = FlowLayout(header_host, h_spacing=14)
+
+        def money_field(label: str, value: int, tip: str) -> QSpinBox:
+            box = QWidget()
+            h = QHBoxLayout(box)
+            h.setContentsMargins(0, 0, 0, 0)
+            h.setSpacing(6)
             k = QLabel(label)
-            k.setObjectName("stat")
-            v = QLabel("—")
-            v.setObjectName("statValue")
-            v.setWordWrap(True)
-            v.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # long texts never force the window wider
-            v.setMinimumWidth(40)
-            k.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-            g.setColumnStretch(i, 1)
-            g.addWidget(k, 0, i)
-            g.addWidget(v, 1, i)
-            self.stat_labels[key] = v
-        root.addWidget(strip)
+            k.setObjectName("fieldLabel")
+            k.setToolTip(tip)
+            sp = QSpinBox()
+            sp.setRange(0, 2_000_000_000)
+            sp.setSingleStep(1_000)
+            sp.setGroupSeparatorShown(True)
+            sp.setSuffix(" mesos")
+            sp.setValue(value)
+            sp.setToolTip(tip)
+            sp.setMinimumWidth(150)
+            sp.setKeyboardTracking(False)          # one change per edit, not per keystroke
+            sp.valueChanged.connect(self._filters_edited)
+            h.addWidget(k)
+            h.addWidget(sp)
+            header.addWidget(box)
+            return sp
+        s = self.settings
+        self.in_min_buy = money_field("Min Buy Price", s.min_buy_price, "Alert only on listings priced at or above this")
+        self.in_max_buy = money_field("Max Buy Price", s.max_buy_price, "Alert only on listings priced at or below this")
+        self.in_min_profit = money_field("Min Profit", s.min_net_profit, "Minimum estimated net profit (after the selling fee) to alert")
+        root.addWidget(header_host)
+        self._filter_timer = QTimer(self)                 # auto-save the three fields shortly after editing
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.timeout.connect(self._apply_main_filters)
 
-        # banner (hidden until a jackpot fires)
+        # ---- banner (hidden until a jackpot fires)
         self.banner = QLabel()
         self.banner.setObjectName("banner")
         self.banner.setWordWrap(True)
@@ -165,100 +179,78 @@ class MainWindow(QMainWindow):
         self.banner_timer.setSingleShot(True)
         self.banner_timer.timeout.connect(self.banner.hide)
 
-        # filters
+        # ---- one light filter row: text search + freshness
         filt_host = QWidget()
         filt = FlowLayout(filt_host)
         filt.setSpacing(10)
-        self.cb_jp = QCheckBox("JACKPOT")
-        self.cb_good = QCheckBox("GOOD FLIP")
-        self.cb_unc = QCheckBox("UNCERTAIN")
-        for cb in (self.cb_jp, self.cb_good, self.cb_unc):
-            cb.setChecked(True)
-            cb.toggled.connect(self._apply_filters)
-            filt.addWidget(cb)
-        filt.addWidget(QLabel("Fresh:"))
-        self.fresh = QComboBox()
-        for label, secs in (("Any", None), ("Last 5 min", 300), ("Last 15 min", 900), ("Last 1 h", 3600)):
-            self.fresh.addItem(label, secs)
-        self.fresh.setCurrentIndex(2)
-        self.fresh.currentIndexChanged.connect(self._apply_filters)
-        filt.addWidget(self.fresh)
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Filter by item or shop…")
+        self.search.setPlaceholderText("Filter by item or seller…")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._apply_filters)
         self.search.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.search.setMinimumWidth(120)
+        self.search.setMinimumWidth(160)
         filt.addWidget(self.search)
-        filt.addWidget(QLabel("Alerts"))
-        self.cb_notif = QCheckBox()
-        self.cb_notif.setChecked(self.settings.notifications_enabled)
-        self.cb_notif.toggled.connect(self._toggle_notifications)
-        filt.addWidget(self.cb_notif)
-        filt.addWidget(QLabel("Vol"))
-        self.vol = QSlider(Qt.Horizontal)
-        self.vol.setRange(0, 100)
-        self.vol.setFixedWidth(110)
-        self.vol.setValue(int(self.settings.alert_volume * 100))
-        self.vol.valueChanged.connect(self._volume)
-        filt.addWidget(self.vol)
+        filt.addWidget(QLabel("Show:"))
+        self.fresh = QComboBox()
+        for label, secs in (("Last 15 min", 900), ("Last 1 h", 3600), ("Last 6 h", 6 * 3600), ("Everything", None)):
+            self.fresh.addItem(label, secs)
+        self.fresh.setCurrentIndex(1)
+        self.fresh.currentIndexChanged.connect(self._apply_filters)
+        filt.addWidget(self.fresh)
         root.addWidget(filt_host)
 
-        # table + details
-        split = QSplitter(Qt.Horizontal)
-        self.split = split
-        split.setChildrenCollapsible(False)
-        split.setHandleWidth(8)
-        split.setStyleSheet("QSplitter::handle { background: #2a3442; border-radius: 3px; margin: 40px 2px; }"
-                            "QSplitter::handle:hover { background: #f5a524; }")
+        # ---- the deals table (full width; details open on double-click)
         self.table = QTableView()
         self.model.stale_after_s = float(self.settings.max_listing_age_s)
-        self.table.setMinimumWidth(540)
         self.table.setModel(self.proxy)
         self.table.setSortingEnabled(True)
-        self.table.sortByColumn(-1, Qt.AscendingOrder)      # no sort column = newest first; click a header to sort
+        self.table.sortByColumn(COLUMNS.index("Net Profit"), Qt.DescendingOrder)   # best fresh deals on top
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableView.SelectRows)
         self.table.setSelectionMode(QTableView.SingleSelection)
         self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.verticalHeader().setDefaultSectionSize(34)
         hh = self.table.horizontalHeader()
         hh.setStretchLastSection(False)
         hh.setSectionResizeMode(0, QHeaderView.Stretch)      # Item takes the remaining width
-        for i, w in ((1, 92), (2, 96), (3, 102), (4, 56), (5, 112)):
-            hh.setSectionResizeMode(i, QHeaderView.Fixed)
+        for name, w in (("Buy Price", 92), ("Sold Price", 92), ("Quick Sale", 92), ("Net Profit", 96), ("ROI %", 70),
+                        ("Channel", 80), ("Room / Map", 100), ("Seller", 120), ("Age", 104)):
+            i = COLUMNS.index(name)
+            hh.setSectionResizeMode(i, QHeaderView.Interactive)
             self.table.setColumnWidth(i, w)
-        hh.setMinimumSectionSize(60)
-        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        hh.setMinimumSectionSize(44)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.table.setWordWrap(False)
+        self.table.setToolTip("Double-click a row for the full breakdown. Sold Price = verified real sales only (N/A when unknown); "
+                              "Quick Sale and Net Profit are estimates.")
         self.table.selectionModel().selectionChanged.connect(self._selection_changed)
-        split.addWidget(self.table)
+        self.table.doubleClicked.connect(lambda _i: self.show_details())
+        root.addWidget(self.table, 1)
 
-        right = QWidget()
-        right.setMinimumWidth(300)
-        rv = QVBoxLayout(right)
-        rv.setContentsMargins(0, 0, 0, 0)
-        rv.setSpacing(8)
-        sec = QLabel("OPPORTUNITY DETAILS")
-        sec.setObjectName("section")
-        rv.addWidget(sec)
+        # ---- details live in a dialog (opened on double-click), not on the main screen
+        self.details_dialog = QDialog(self)
+        self.details_dialog.setWindowTitle("Deal details")
+        self.details_dialog.setStyleSheet(QSS)
+        self.details_dialog.resize(640, 720)
+        dv = QVBoxLayout(self.details_dialog)
+        dv.setContentsMargins(12, 12, 12, 12)
+        dv.setSpacing(8)
         self.details = QTextBrowser()
         self.details.setOpenExternalLinks(True)
         self.details.setHtml(self._placeholder_html())
-        rv.addWidget(self.details, 1)
+        dv.addWidget(self.details, 1)
         btns = QHBoxLayout()
-        self.btn_copy_shop = QPushButton("📋 Copy shop name")
+        self.btn_copy_shop = QPushButton("📋 Copy seller name")
         self.btn_copy_loc = QPushButton("📋 Copy FM location")
         self.btn_copy_shop.clicked.connect(lambda: self._copy("shop"))
         self.btn_copy_loc.clicked.connect(lambda: self._copy("loc"))
+        btn_close = QPushButton("Close")
+        btn_close.clicked.connect(self.details_dialog.hide)
         btns.addWidget(self.btn_copy_shop)
         btns.addWidget(self.btn_copy_loc)
-        rv.addLayout(btns)
-        split.addWidget(right)
-        split.setStretchFactor(0, 3)
-        split.setStretchFactor(1, 2)
-        split.setSizes([980, 480])
-        root.addWidget(split, 1)
+        btns.addStretch(1)
+        btns.addWidget(btn_close)
+        dv.addLayout(btns)
         self._restore_layout()
 
         self.physical = None
@@ -274,14 +266,28 @@ class MainWindow(QMainWindow):
         else:
             self.setCentralWidget(central)      # Market Scanner is the whole program
         self.status = self.statusBar()
-        self.status.showMessage("Ready. Press Start scanner.")
-        self._set_state("OFFLINE")
+        self.stats: dict[str, str] = {}
+        self.sources_text = ""
+        self.status_label = QLabel("Ready — set your three numbers and press Start. Double-click a deal for details.")
+        self.status_label.setObjectName("stat")
+        self.status_label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.status.addWidget(self.status_label, 1)
+        self._set_state("STOPPED")
 
     def _placeholder_html(self) -> str:
-        return (f"<div style='color:{MUTED};padding:8px'>Select an opportunity to see item stats, comparable "
-                f"listings, completed-sale data, the pricing explanation and the exact Free Market location.<br><br>"
-                f"The scanner evaluates <b>every</b> listing from the connected sources automatically — "
-                f"no watchlist is needed.</div>")
+        return (f"<div style='color:{MUTED};padding:8px'>Double-click a deal in the table to see item stats, verified "
+                f"sale data, the pricing explanation and the exact Free Market location.</div>")
+
+    def show_details(self) -> None:
+        opp = self._selected()
+        if opp is None:
+            return
+        self.details.setHtml(self.details_html(opp))
+        if opp.listing.icon_url:
+            self._load_icon(opp.listing.icon_url)
+        self.details_dialog.setWindowTitle(f"Deal details — {opp.listing.item_name}")
+        self.details_dialog.show()
+        self.details_dialog.raise_()
 
     # ---------------------------------------------------------------- tray
     def _tray(self) -> None:
@@ -429,11 +435,6 @@ class MainWindow(QMainWindow):
                 self.restoreGeometry(QByteArray.fromBase64(s.ui_main_window_geometry.encode("ascii")))
             except Exception:  # noqa: BLE001
                 pass
-        if s.ui_main_splitter_state:
-            try:
-                self.split.restoreState(QByteArray.fromBase64(s.ui_main_splitter_state.encode("ascii")))
-            except Exception:  # noqa: BLE001
-                pass
         if not self.isMaximized():
             screen = self._screen_rect()
             wanted = self.geometry() if s.ui_main_window_geometry else QRect(0, 0, min(1480, screen.width() - 40),
@@ -444,7 +445,6 @@ class MainWindow(QMainWindow):
 
     def save_layout(self) -> None:
         self.settings.ui_main_window_geometry = bytes(self.saveGeometry().toBase64()).decode("ascii")
-        self.settings.ui_main_splitter_state = bytes(self.split.saveState().toBase64()).decode("ascii")
         try:
             self.settings.save()
         except Exception:  # noqa: BLE001
@@ -480,14 +480,47 @@ class MainWindow(QMainWindow):
     def toggle_scanner(self) -> None:
         if self.engine.running:
             self.engine.stop()
-            self.btn_start.setText("▶  Start scanner")
-            self.status.showMessage("Scanner stopped.")
+            self.btn_start.setText("▶  Start")
+            self._set_state("STOPPED")
+            self.status_label.setText("Stopped. Press Start to scan again.")
         else:
+            self._apply_main_filters()
             self.engine.start()
-            self.btn_start.setText("⏹  Stop scanner")
-            self.status.showMessage("Scanner started — discovering the whole accessible market…")
+            self.btn_start.setText("⏹  Stop")
+            self._set_state("STARTING")
+            self.status_label.setText("Starting — connecting to the market sources…")
             QTimer.singleShot(1500, self._backfill_physical)
         self._refresh_stats()
+
+    # the three main numbers: validated, saved automatically, applied to the live scanner and the table
+    def _filters_edited(self, *_):
+        self._filter_timer.start(600)
+
+    def _apply_main_filters(self) -> None:
+        lo, hi, prof = self.in_min_buy.value(), self.in_max_buy.value(), self.in_min_profit.value()
+        if hi < lo:                                   # keep the range sane without nagging dialogs
+            hi = lo
+            self.in_max_buy.blockSignals(True)
+            self.in_max_buy.setValue(hi)
+            self.in_max_buy.blockSignals(False)
+        changed = (lo, hi, prof) != (self.settings.min_buy_price, self.settings.max_buy_price, self.settings.min_net_profit)
+        self.settings.min_buy_price, self.settings.max_buy_price, self.settings.min_net_profit = lo, hi, prof
+        if changed:
+            try:
+                self.settings.save()
+            except Exception:  # noqa: BLE001
+                log.exception("could not save filters")
+            self.engine.update_settings(self.settings)
+            self.proxy.settings = self.settings
+            self.proxy.invalidateFilter()
+            self.status_label.setText(f"Filters saved: buy {lo:,}–{hi:,} mesos, profit ≥ {prof:,}.")
+
+    def _sync_fields_from_settings(self) -> None:
+        for sp, val in ((self.in_min_buy, self.settings.min_buy_price), (self.in_max_buy, self.settings.max_buy_price),
+                        (self.in_min_profit, self.settings.min_net_profit)):
+            sp.blockSignals(True)
+            sp.setValue(val)
+            sp.blockSignals(False)
 
     def _backfill_physical(self) -> None:
         if self.physical is None:
@@ -506,11 +539,6 @@ class MainWindow(QMainWindow):
         self.settings.save()
         self.engine.update_settings(self.settings)
 
-    def _volume(self, v: int) -> None:
-        self.settings.alert_volume = v / 100
-        self.notifier.set_volume(self.settings.alert_volume)
-        self.settings.save()
-
     def open_settings(self) -> None:
         dlg = SettingsDialog(self.settings, self, notifier=self.notifier, engine=self.engine)
         if not dlg.exec():
@@ -521,12 +549,9 @@ class MainWindow(QMainWindow):
             new = dlg.result_settings(self.settings)
             self.settings = new
             new.save()
-            self.vol.blockSignals(True)
-            self.vol.setValue(int(new.alert_volume * 100))
-            self.vol.blockSignals(False)
             self.notifier.set_volume(new.alert_volume)
             self.engine.update_settings(new)
-            self.cb_notif.setChecked(new.notifications_enabled)
+            self._sync_fields_from_settings()
             set_run_on_startup(new.run_on_windows_startup)
             self.proxy.settings = new
             self.model.stale_after_s = float(new.max_listing_age_s)
@@ -539,19 +564,11 @@ class MainWindow(QMainWindow):
             if source_changed and self.engine.running:
                 self.engine.stop()
                 self.engine.start()            # rebuilds adapters with fresh clients from the new settings
-                self.status.showMessage("Settings saved — scanner restarted with the new source settings.")
+                self.status_label.setText("Settings saved — scanner restarted with the new source settings.")
             else:
-                self.status.showMessage("Settings saved.")
+                self.status_label.setText("Settings saved.")
 
     def _apply_filters(self) -> None:
-        lv = set()
-        if self.cb_jp.isChecked():
-            lv.add(Level.JACKPOT)
-        if self.cb_good.isChecked():
-            lv.add(Level.GOOD)
-        if self.cb_unc.isChecked():
-            lv.add(Level.UNCERTAIN)
-        self.proxy.show_levels = lv
         self.proxy.max_age_s = self.fresh.currentData()
         self.proxy.text = self.search.text().strip().lower()
         self.proxy.invalidateFilter()
@@ -562,7 +579,7 @@ class MainWindow(QMainWindow):
             return
         txt = opp.listing.seller if what == "shop" else opp.listing.location
         QGuiApplication.clipboard().setText(txt)
-        self.status.showMessage(f"Copied: {txt}", 3000)
+        self.status_label.setText(f"Copied: {txt}")
 
     # -------------------------------------------------------------- events
     def on_listing(self, lst, kind: str) -> None:
@@ -608,7 +625,7 @@ class MainWindow(QMainWindow):
             if pop.opp.key == opp.key:
                 pop.set_availability(status, opp.last_verified_at, note)
         sel = self._selected()
-        if sel is not None and sel.key == opp.key:
+        if sel is not None and sel.key == opp.key and self.details_dialog.isVisible():
             self.details.setHtml(self.details_html(opp))
 
     def on_spot_alert(self, ev) -> None:
@@ -625,6 +642,11 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- stats
     def _set_state(self, state: str) -> None:
+        """User-facing states: LIVE / STOPPED / ERROR (plus STARTING while connecting)."""
+        if state == "OFFLINE":
+            state = "ERROR" if self.engine.running else "STOPPED"
+        elif state == "DEGRADED":
+            state = "LIVE"                  # some source down, data still flowing: the status line says which
         color = STATE_COLORS.get(state, MUTED)
         self.state_pill.setText(state)
         self.state_pill.setStyleSheet(f"background:{color}22; color:{color}; border:1px solid {color};")
@@ -635,38 +657,26 @@ class MainWindow(QMainWindow):
         e = self.engine
         health = health or e.health()
         e._refresh_state()
-        self._set_state(e.scanner_state)
+        self._set_state(e.scanner_state if e.running else "STOPPED")
         online = [h for h in health if h.status.value == "ONLINE"]
         if int(time.time()) % 5 == 0:
             self._refresh_fmw_status()
-        self.stat_labels["sources"].setText(
-            " · ".join([f"<span style='color:{GREEN if h.status.value=='ONLINE' else YELLOW if h.status.value in ('STALE','RATE LIMITED') else RED}'>"
-                        f"{h.label}: {h.status.value}</span>" for h in health] + ([self._fmw_status_text] if self._fmw_status_text else [])) or "none")
+        self.sources_text = " · ".join(f"{h.label}: {h.status.value}" for h in health) or "none"
         last = max((h.last_success_at or 0) for h in health) if health else 0
-        self.stat_labels["update"].setText(fmt_age(time.time() - last) + " ago" if last else "—")
         ages = [h.newest_data_age_s for h in online if h.newest_data_age_s is not None]
-        self.stat_labels["age"].setText(fmt_age(min(ages)) if ages else "unknown")
-        self.stat_labels["new"].setText(f"{e.metrics.listings_new:,}")
         m = e.metrics.snapshot()
         s2a = m.get("source_to_alert_avg_s")
-        snd = self.notifier.sound_latency_ms
-        snd_txt = f" · ingest→sound {sum(snd[-50:]) / len(snd[-50:]):.0f} ms" if snd else ""
-        if e.metrics.verifications:
-            snd_txt += f" · verified {e.metrics.verifications} ({e.metrics.verified_gone} gone)"
-        if self.watchdog.worst_ms > 300:
-            snd_txt += f" · UI worst stall {self.watchdog.worst_ms:.0f} ms ({e.metrics.ui_stalls})"
-        self.stat_labels["latency"].setText(f"{s2a:.1f} s (n={e.metrics.alerts}){snd_txt}" if s2a is not None else "no alerts yet")
-        am = m.get("analysis_ms_avg")
-        self.stat_labels["analysis"].setText(f"{am:.0f} ms" if am is not None else "—")
-        self.stat_labels["opps"].setText(f"{sum(1 for o in self.model.rows if o.level != Level.NONE):,}")
         cov = e.coverage()
-        self.stat_labels["coverage"].setText(
-            f"{cov['items_with_listings']:,} items seen / {cov['catalog_items']:,} catalog · {cov['listings_1h']:,} rows last 1h")
-        for key, lbl in self.stat_labels.items():
-            if key != "coverage":
-                lbl.setToolTip(lbl.text())
-        self.stat_labels["coverage"].setToolTip(
-            "Coverage = what the connected community scanners uploaded. Shops nobody scanned are NOT visible.")
+        self.stats = {
+            "sources": self.sources_text,
+            "update": fmt_age(time.time() - last) + " ago" if last else "—",
+            "age": fmt_age(min(ages)) if ages else "unknown",
+            "new": f"{e.metrics.listings_new:,}",
+            "latency": f"{s2a:.1f} s (n={e.metrics.alerts})" if s2a is not None else "no alerts yet",
+            "analysis": f"{m.get('analysis_ms_avg'):.0f} ms" if m.get("analysis_ms_avg") is not None else "—",
+            "opps": f"{sum(1 for o in self.model.rows if o.level != Level.NONE):,}",
+            "coverage": f"{cov['items_with_listings']:,} items seen / {cov['catalog_items']:,} catalog · {cov['listings_1h']:,} rows last 1h",
+        }
         self.watchdog.mark("stats tick")
         if e.running and not getattr(self, "_backfilled_once", False):
             self._backfilled_once = True
@@ -674,9 +684,17 @@ class MainWindow(QMainWindow):
         self.model.refresh_ages()
         if self.physical is not None and int(time.time()) % 3 == 0:
             self.physical.refresh_ages()
-        if e.scanner_state == "LIVE":
-            self.status.showMessage(f"LIVE · {e.metrics.listings_ingested:,} rows ingested · {e.metrics.evaluations:,} evaluated · "
-                                    f"{e.metrics.alerts} alerts · dup alerts suppressed {e.metrics.duplicate_alerts_suppressed}")
+        if e.running:
+            err = next((h for h in health if h.status.value in ("ERROR", "AUTH REQUIRED", "UNAVAILABLE")), None)
+            if e.scanner_state == "LIVE":
+                text = (f"LIVE · {len(online)} source{'s' if len(online) != 1 else ''} online · newest data {self.stats['age']} · "
+                        f"{e.metrics.listings_new:,} new listings · {self.stats['opps']} deals · {e.metrics.alerts} alerts")
+            elif err is not None and not online:
+                text = f"ERROR · {err.label}: {err.last_error or err.status.value} — click the state pill for details"
+            else:
+                text = f"{e.scanner_state} · {self.sources_text}"
+            self.status_label.setText(text)
+        self.status_label.setToolTip("\n".join(f"{k}: {v}" for k, v in self.stats.items()))
 
     # -------------------------------------------------------------- details
     def _selected(self) -> Optional[Opportunity]:
@@ -687,7 +705,7 @@ class MainWindow(QMainWindow):
 
     def _selection_changed(self, *_):
         opp = self._selected()
-        if opp:
+        if opp and self.details_dialog.isVisible():
             self.details.setHtml(self.details_html(opp))
             if opp.listing.icon_url:
                 self._load_icon(opp.listing.icon_url)
@@ -721,8 +739,10 @@ class MainWindow(QMainWindow):
                         f"<td style='padding:4px 0'>{val}</td></tr>")
 
         row("Listing price", f"<b>{l.price:,}</b> mesos" + (f" × {l.qty}" if l.qty > 1 else ""))
+        row("Sold price (verified)", f"<b>{v.sold_price:,}</b> — {esc(v.sold_basis)}" if v.sold_price
+            else f"<span style='color:{MUTED}'>N/A — no reliable completed-sale data (never estimated)</span>")
         row("Reference value", f"{v.reference:,}" if v.reference else "n/a")
-        row("Quick sale price", f"{v.quick:,}" if v.quick else "n/a")
+        row("Quick sale price", f"{v.quick:,} <span style='color:{MUTED}'>(estimate, not guaranteed)</span>" if v.quick else "n/a")
         row("Conservative sale", f"{v.conservative:,}" if v.conservative else "n/a")
         row("Net profit (quick)", f"<b style='color:{GREEN if (v.net_profit or 0) > 0 else RED}'>{v.net_profit:+,}</b>" if v.net_profit is not None else "n/a")
         row("Net profit (conservative)", f"{v.net_profit_conservative:+,}" if v.net_profit_conservative is not None else "n/a")

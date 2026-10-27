@@ -21,6 +21,8 @@ QLabel#subtitle {{ color: {MUTED}; padding: 0 12px 6px 12px; }}
 QLabel#pill {{ border-radius: 12px; padding: 6px 16px; font-weight: 700; }}
 QLabel#stat {{ color: {MUTED}; padding: 6px 12px; }}
 QLabel#statValue {{ color: {TEXT}; font-weight: 700; font-size: 15px; padding: 2px 12px 8px 12px; }}
+QLabel#fieldLabel {{ color: {MUTED}; font-weight: 600; padding-left: 4px; }}
+QSpinBox {{ padding: 6px 8px; border: 1px solid {BORDER}; border-radius: 6px; background: {PANEL}; }}
 QLabel#section {{ color: {MUTED}; font-weight: 700; letter-spacing: 1px; padding: 10px 12px 4px 12px; }}
 QPushButton {{ background: {PANEL2}; border: 1px solid {BORDER}; border-radius: 8px; padding: 8px 16px; min-height: 18px; }}
 QPushButton:hover {{ border-color: {ACCENT}; }}
@@ -54,4 +56,4 @@ QLabel#banner {{ background: #3a1414; color: #ffd166; border: 2px solid {RED}; b
 """
 
 LEVEL_COLORS = {"JACKPOT": RED, "GOOD FLIP": GREEN, "UNCERTAIN": YELLOW, "NONE": MUTED}
-STATE_COLORS = {"LIVE": GREEN, "DEGRADED": YELLOW, "OFFLINE": RED}
+STATE_COLORS = {"LIVE": GREEN, "DEGRADED": YELLOW, "OFFLINE": RED, "ERROR": RED, "STOPPED": MUTED, "STARTING": YELLOW}

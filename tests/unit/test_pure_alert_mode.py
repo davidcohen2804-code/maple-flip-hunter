@@ -50,7 +50,7 @@ def test_default_build_has_no_physical_features(app, tmp_path, monkeypatch):
     assert not isinstance(w.centralWidget(), __import__("PySide6.QtWidgets", fromlist=["QTabWidget"]).QTabWidget)
     assert popen_calls == [] and grabs == []                             # nothing launched, nothing captured
     assert not w.fmw_launcher.started_by_us
-    assert "FM Watcher" not in w.stat_labels["sources"].text()
+    assert "FM Watcher" not in w.sources_text
     w.tray.hide(); w.close()
 
 

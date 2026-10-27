@@ -1,5 +1,13 @@
 # שרת הרישוי בחינם — Cloudflare Workers + D1 (תקציב 0 ₪)
 
+> **מצב נוכחי (2026-10-27): השרת פרוס ופעיל.**
+> כתובת: `https://mfh-license.davidcohen2804.workers.dev` · Worker `mfh-license` · מסד D1 `mfh-licenses` (id `084d45c9-f6be-461a-ae85-545b66390f9f`)
+> מפתח ציבורי: `e493b61aa29db547f715cb512aed114e7c136cccd89f53f95acc92532ae99e32` (מופיע גם ב‑`/v1/health`).
+> המפתח הפרטי ו‑ADMIN_TOKEN נוצרו בתוך הדפדפן ונשמרו רק כ‑Secrets של ה‑Worker.
+> **כדי להשתמש ב‑`cf_admin.py` יש להגדיר ADMIN_TOKEN לערך משלך**: Cloudflare → Workers & Pages → mfh-license → Settings →
+> Variables and Secrets → ADMIN_TOKEN → עריכה → ערך חדש (מחרוזת ארוכה) → Deploy. אותו ערך נכנס ל‑`MFH_ADMIN_TOKEN` אצלך.
+> בלי זה אפשר ליצור קודים ישירות בקונסולת D1 (סעיף 4ב).
+
 אין VPS, אין דומיין, אין כרטיס אשראי. שרת הרישוי רץ כ‑Worker של Cloudflare בתוכנית החינמית, עם מסד D1 חינמי,
 בכתובת HTTPS `https://mfh-license.<השם-שלך>.workers.dev`. ה‑EXE לחברים נבנה אוטומטית מול הכתובת הזאת.
 
@@ -71,6 +79,16 @@ python server\cf_admin.py update 0.13.1 https://github.com/<you>/MapleFlipHunter
 כללים (נאכפים בשרת, לפי שעון השרת): 72 שעות ניסיון מההפעלה הראשונה; קוד 14 יום חד‑פעמי, נקשר למחשב הראשון; קוד
 לצמיתות לא יורד בדרגה; `revoke` נועל גם lifetime; `unrevoke` מחזיר לכללי הניסיון (לתת קוד חדש); רישיון לפי מחשב ולא
 לפי גרסה — עדכונים לא מאבדים רישיון.
+
+### 4ב. יצירת קודים בלי cf_admin (קונסולת D1)
+Cloudflare → Storage & databases → D1 → mfh-licenses → Console:
+```sql
+INSERT INTO codes(code, days, created) VALUES ('ABCD-EFGH-JKLM', 14, strftime('%s','now'));   -- 14 יום
+INSERT INTO codes(code, days, created) VALUES ('WXYZ-2345-6789', 0,  strftime('%s','now'));   -- לצמיתות
+SELECT substr(machine,1,12), datetime(first_seen,'unixepoch'), licensed_until, version FROM machines;  -- מי מחובר
+UPDATE machines SET licensed_until=-1 WHERE machine LIKE '3fa9c1%';   -- ביטול (revoke); NULL מחזיר לכללי הניסיון
+```
+הקוד חופשי (אותיות/ספרות ומקפים); נקשר למחשב הראשון שמזין אותו.
 
 ## 5. גיבויים (חינם)
 
