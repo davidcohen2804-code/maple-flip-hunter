@@ -53,7 +53,7 @@ class AlertPopup(QWidget):
         head.setWordWrap(True)
         v.addWidget(head)
         net = f"{val.net_profit:+,}" if val.net_profit is not None else "n/a"
-        price = QLabel(f"Buy <b>{l.price:,}</b> mesos &nbsp;·&nbsp; quick sale <b>{val.quick:,}</b> (estimate) &nbsp;·&nbsp; "
+        price = QLabel(f"Buy <b>{l.price:,}</b> mesos &nbsp;·&nbsp; quick sale <b>{val.quick:,}</b> (estimate, not guaranteed) &nbsp;·&nbsp; "
                        f"net profit <b style='color:{GREEN}'>{net}</b>" if val.quick else f"Buy <b>{l.price:,}</b> mesos")
         price.setWordWrap(True)
         v.addWidget(price)
