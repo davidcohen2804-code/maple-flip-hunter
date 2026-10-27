@@ -4,10 +4,16 @@
   "min_net_profit": 5000,
   "alert_min_confidence_label": "LOW",
   "source_cozy_enabled": false,
-  "source_msw_enabled": true,
+  "source_msw_enabled": false,
   "source_fmwatcher_enabled": true,
   "source_fmwatcher_autostart": false,
   "physical_features_enabled": true,
   "source_fmwatcher_dir": "__FOLDER__",
-  "source_fmwatcher_interval_s": 2
+  "source_fmwatcher_interval_s": 2,
+  "source_clubfm_enabled": true,
+  "source_clubfm_permission_granted": true,
+  "source_clubfm_token": "demo-token",
+  "source_clubfm_base_url": "http://127.0.0.1:8765",
+  "source_clubfm_interval_s": 30,
+  "source_clubfm_live_interval_s": 10
 }

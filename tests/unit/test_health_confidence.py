@@ -31,7 +31,7 @@ def test_confidence_from_real_maplestory_watch_fixture():
         if req.url.path == "/api/items":
             return httpx.Response(200, json=load_fixture("msw_items.json"))
         return httpx.Response(200, json=load_fixture("msw_item_angel_halo.json"))
-    a = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    a = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), permission_granted=True)
     listings = run(a.poll())
     lst = listings[0]
     ev = run(a.fetch_evidence(lst, 24 * 3600))

@@ -1,4 +1,11 @@
-"""maplestory.watch adapter (secondary source).
+"""maplestory.watch adapter.
+
+ACCESS STATUS (checked 2026-10-27): maplestory.watch's Terms (updated 2026-10-27) and robots.txt say /api/ is NOT a
+public API — scripts, bots and apps may not read it, requests not coming from the site's pages are blocked
+(HTTP 403), and getting around a block (user agent, headers, addresses) is forbidden. Therefore this adapter
+does NOT poll unless the owner has recorded written permission from maplestory.watch
+(`Settings.source_msw_permission_granted = True` + the contact/date in `source_msw_permission_note`).
+Ask on their Discord: https://discord.gg/tdgvx66gk6. Nothing here circumvents the block.
 
 Verified endpoints (2026-10-25):
   GET /api/items                 whole market index (~290 KB JSON, Cache-Control max-age=203)
@@ -30,8 +37,13 @@ class MapleStoryWatchAdapter(BaseAdapter):
     rate = 1.5
     burst = 3
 
-    def __init__(self, *args: Any, max_item_lookups: int = 40, candidate_discount: float = 0.20, **kwargs: Any):
+    PERMISSION_MSG = ("maplestory.watch forbids app access to /api/ (Terms + robots.txt, 2026-10-27) — not polled until "
+                      "written permission is recorded in Settings → Sources; ask on their Discord")
+
+    def __init__(self, *args: Any, max_item_lookups: int = 40, candidate_discount: float = 0.20,
+                 permission_granted: bool = False, **kwargs: Any):
         super().__init__(*args, **kwargs)
+        self.permission_granted = permission_granted
         self.max_item_lookups = max_item_lookups
         self.candidate_discount = candidate_discount
         self.index: dict[str, dict[str, Any]] = {}     # name -> index row
@@ -45,6 +57,24 @@ class MapleStoryWatchAdapter(BaseAdapter):
         self.verify_limit_note = "maplestory.watch item pages are cached 5 min: a confirmation can be up to 5 min old"
         self.backlog = 0
         self._index_fetched_at = 0.0
+        self._robots_checked_at = 0.0
+        self._robots_disallows = False
+        if not permission_granted:
+            from ..models import SourceStatus
+            self._set_status(SourceStatus.UNSUPPORTED, self.PERMISSION_MSG)
+
+    async def _robots_allow(self) -> bool:
+        """Even with permission recorded, never read /api/ while robots.txt disallows it (re-checked hourly)."""
+        if time.time() - self._robots_checked_at < 3600:
+            return not self._robots_disallows
+        self._robots_checked_at = time.time()
+        try:
+            r = await self.client.get("/robots.txt" if str(self.client.base_url) else f"{self.base_url}/robots.txt", timeout=10)
+            txt = r.text if r.status_code == 200 else ""
+        except Exception:  # noqa: BLE001
+            txt = ""
+        self._robots_disallows = any(line.strip().lower().replace(" ", "") == "disallow:/api/" for line in txt.splitlines())
+        return not self._robots_disallows
 
     @staticmethod
     def _as_int(v: Any) -> Optional[int]:
@@ -89,6 +119,8 @@ class MapleStoryWatchAdapter(BaseAdapter):
         return len(self.index)
 
     async def verify(self, listing: Listing) -> Optional[tuple[str, float, str]]:
+        if not self.permission_granted or self._robots_disallows:
+            return None
         """Re-read the item page (cached ≤ 300 s by the site). Explicit flags only: soldOut → SOLD, closed → REMOVED,
         same seller at another price → REMOVED (repriced), present & open → ACTIVE. Absent from the page → None."""
         name = listing.item_name
@@ -121,6 +153,13 @@ class MapleStoryWatchAdapter(BaseAdapter):
         return 2.0 if self.backlog else self.interval_s   # keep draining candidates in short chunks
 
     async def poll(self) -> list[Listing]:
+        from ..models import SourceStatus
+        if not self.permission_granted:
+            self._set_status(SourceStatus.UNSUPPORTED, self.PERMISSION_MSG)
+            return []
+        if not await self._robots_allow():
+            self._set_status(SourceStatus.UNSUPPORTED, "maplestory.watch robots.txt disallows /api/ — not polled (permission recorded, but the site still says no)")
+            return []
         now = time.time()
         if now - self._index_fetched_at >= 60:          # the index is CDN-cached ~200 s; no point refetching sooner
             await self.refresh_index()

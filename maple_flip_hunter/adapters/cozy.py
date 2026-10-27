@@ -37,8 +37,12 @@ class CozyAdapter(BaseAdapter):
 
     def __init__(self, *args: Any, max_shops_per_cycle: int = 25, token: str = "", **kwargs: Any):
         super().__init__(*args, **kwargs)
-        if token.strip():  # only if cozy.markets issues one; never used to evade the bot check
+        self.has_token = bool(token.strip())
+        if self.has_token:  # only if cozy.markets issues one; never used to evade the bot check
             self.set_header("Authorization", f"Bearer {token.strip()}")
+        else:
+            from ..models import SourceStatus
+            self._set_status(SourceStatus.AUTH_REQUIRED, "no cozy.markets access token — not polled (the site answers 403 to apps)")
         self.max_shops_per_cycle = max_shops_per_cycle
         self._shops_watermark: float = time.time() - 300  # start with the last 5 minutes
         self._shop_seen_at: dict[str, float] = {}
@@ -250,6 +254,10 @@ class CozyAdapter(BaseAdapter):
     async def poll(self) -> list[Listing]:
         """One incremental cycle: queue every changed shop, fetch rows for as many as allowed, and read
         the under-FM deals feed. Shops that did not fit stay queued for the next cycle (never dropped)."""
+        if not self.has_token:
+            from ..models import SourceStatus
+            self._set_status(SourceStatus.AUTH_REQUIRED, "no cozy.markets access token — not polled (the site answers 403 to apps)")
+            return []
         if time.time() - self._catalog_at > self.catalog_refresh_s:
             try:
                 await self.refresh_catalog()

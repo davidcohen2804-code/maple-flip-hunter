@@ -50,7 +50,7 @@ class FakeCozy:
 
 
 def _adapter(fake: FakeCozy, max_shops: int) -> CozyAdapter:
-    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(fake.handler), base_url="https://x"),
+    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(fake.handler), base_url="https://x"), token="t",
                     max_shops_per_cycle=max_shops)
     a.bucket.rate = 10_000
     a._catalog_at = time.time()
@@ -109,7 +109,7 @@ def test_failing_shop_is_retried_then_dropped():
         if req.url.path.endswith(f"/{bad}/listings"):
             return httpx.Response(500)
         return orig(req)
-    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), token="t")
     a.bucket.rate = 10_000
     a.retry_base_delay = 0.001
     a._catalog_at = time.time()
@@ -133,7 +133,7 @@ def test_deals_feed_paginates_until_watermark():
         if p == "/api/shops" or p == "/api/items":
             return httpx.Response(200, json={"rows": [], "pages": 1})
         return httpx.Response(404)
-    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), token="t")
     a.bucket.rate = 10_000
     a._catalog_at = time.time()
     a._deals_watermark = 0
@@ -157,7 +157,7 @@ def test_msw_unfetched_candidates_remain_candidates():
                  "soldOut": False, "closed": False, "firstSeen": 1_000_000, "seen": 1_000_000}]})
         return httpx.Response(404)
     a = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"),
-                               max_item_lookups=20)
+                               max_item_lookups=20, permission_granted=True)
     a.bucket.rate = 10_000
     got = run(a.poll()) ; assert a.backlog == 30 and len(got) == 20
     got += run(a.poll()); got += run(a.poll())
@@ -223,7 +223,7 @@ def test_shop_with_many_rows_is_read_across_all_pages():
         if p in ("/api/deals", "/api/items"):
             return httpx.Response(200, json={"rows": [], "pages": 1})
         return httpx.Response(404)
-    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), token="t")
     a.bucket.rate = 10_000
     a._catalog_at = time.time()
     got = run(a.poll())
@@ -242,7 +242,7 @@ def test_deals_safety_valve_keeps_watermark():
         if p in ("/api/shops", "/api/items"):
             return httpx.Response(200, json={"rows": [], "pages": 1})
         return httpx.Response(404)
-    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    a = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), token="t")
     a.bucket.rate = 10_000
     a._catalog_at = time.time()
     a._deals_watermark = 0

@@ -49,21 +49,29 @@ After a "yes": cozy → paste the token (if any) in Settings → cozy.markets to
 
 ---
 
-## 3. maplestory.watch — in game `/whisper Goofball`, or Discord **Objectivist**
+## 3. maplestory.watch — Discord https://discord.gg/tdgvx66gk6 (the address their robots.txt / Terms give for data requests)
 
-> Hi Goofball! I use your market index in a personal Windows tool that watches for badly underpriced Free Market
-> listings and plays an alarm (it never automates the game; it only reads market data). It polls
-> `/api/items` every 3 minutes and `/api/item?name=` for a handful of candidate items, with the User-Agent
-> `MapleFlipHunter/0.4 (+personal tool)`.
->
-> Two questions: (1) is that usage OK with you, and (2) is there any way to get fresher data — e.g. an endpoint
-> or parameter that bypasses the ~200–300 s cache for listings seen in the last few minutes, or a "recent
-> sightings" feed? Right now the newest listing I can see is usually 2–5 minutes old. I'll follow any limits
-> you set, and I can contribute by sharing my own game window with the companion.
->
-> Thanks for building it!
+**Status 2026-10-27: STOP — the site updated its Terms today.** `/api/` is declared *not* a public API; scripts, bots and
+apps may not read it; requests not coming from the site's pages are blocked (HTTP 403); getting around a block is
+forbidden; copying/republishing the index is forbidden. The adapter therefore no longer polls (status UNSUPPORTED)
+until written permission is recorded. Message to send on their Discord:
 
----
+> Hi! I'm David, a MapleStory Classic player. I built a small personal Windows tool that watches the Free Market
+> for badly under-priced shop listings and plays a sound so I can go buy them. It never touches the game (no
+> memory reading, no screen capture, no automation) and never republishes your data — each user's copy only shows
+> the current listing it is alerting about.
+>
+> I read your updated Terms (Oct 27) and robots.txt: /api/ is not public and apps are blocked. I respect that —
+> my tool has stopped calling it. I'm asking for permission instead of working around anything.
+>
+> Would you allow my tool to read `/api/items` (the index, once every 3 minutes) and `/api/item?name=…` (only for
+> items whose lowest price is far under typical, at most 40 lookups per 3 minutes, 1 request/second max, honest
+> User-Agent `MapleFlipHunter/<version>`), for me and a handful of friends (under 30 people)? If you'd rather issue
+> a token, a slower cadence, a specific endpoint, or say no — I'll follow whatever you decide, and I'm glad to
+> credit maplestory.watch in the app and contribute shop scans back. Thank you for building the index!
+
+After a written "yes": record it in Settings → Sources → "maplestory.watch — written permission" (+ who/when in
+the note), and for the Friends build add `"msw_permission": true` to `friends_config.json` at build time.
 
 ## 4. Kerning Exchange (kerning.gg) — Discord https://discord.gg/wrWgmK2Czk (optional)
 

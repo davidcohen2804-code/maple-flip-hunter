@@ -1,3 +1,11 @@
+# Source audit
+
+> **2026-10-27 — maplestory.watch changed its Terms:** `/api/` is not a public API; scripts/bots/apps may not read it;
+> blocked (HTTP 403) when the request does not come from the site's pages; circumvention forbidden; republishing
+> forbidden. Maple Flip Hunter stopped polling it (adapter status UNSUPPORTED, zero requests) until written permission
+> is recorded. cozy.markets: HTTP 403 without a token → not polled. Club FM: permission not recorded → not polled.
+> **Result: as of this date the app has no permitted live source.** See `docs/ACCESS_REQUESTS.md` §3.
+
 # Source audit — MapleStory Classic World market data
 
 Investigated 2026-10-25 (Asia/Jerusalem afternoon) with real HTTP requests from a browser session

@@ -138,7 +138,7 @@ def test_msw_verify_uses_explicit_flags_only():
             {"seller": "Cid", "channel": 3, "unit": 8_000, "price": 8_000, "seen": 1500},
             {"seller": "Dan", "channel": 3, "unit": 9_500, "price": 9_500, "seen": 1600},
         ]})
-    a = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    a = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), permission_granted=True)
     run = lambda c: asyncio.new_event_loop().run_until_complete(c)  # noqa: E731
     mk = lambda seller: make_listing(name="Zard", price=8_000, seller=seller, channel=3, source="msw")  # noqa: E731
     assert run(a.verify(mk("Bob")))[0] == "SOLD"

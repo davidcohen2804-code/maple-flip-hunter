@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.15.0 — 2026-10-27 (maplestory.watch changed its Terms — polling stopped until permission)
+* maplestory.watch Terms + robots.txt (updated 2026-10-27): `/api/` is not public, apps may not read it, blocks must
+  not be circumvented. The adapter now reports UNSUPPORTED and sends **no requests** unless written permission is
+  recorded (`source_msw_permission_granted` + note); even then it re-reads robots.txt hourly and stays off while
+  `/api/` is disallowed. cozy.markets is not polled without a token (it only ever answered 403).
+* Friends Edition: provider permissions come only from `friends_config.json` at build time (a friend's settings.json
+  cannot switch a source on).
+* CI: the internet smoke run now passes only if either a permitted source delivers data, or no source is permitted
+  and the EXE stays up, says why, and sends zero requests to blocked sites. The FM Watcher stage prices via the local
+  Club FM simulator. Live tests assert the adapter stays silent and record the current robots.txt policy.
+* Docs: `docs/ACCESS_REQUESTS.md` §3 — message for the maplestory.watch Discord; `docs/SOURCE_AUDIT.md` note.
+* Honest consequence: until a provider says yes, the app has no live market data to show.
+
 ## 0.14.1 — 2026-10-27
 * First minutes after Start show **STARTING** (waiting for the first maplestory.watch poll) instead of ERROR; ERROR
   only when every source failed, naming each one.

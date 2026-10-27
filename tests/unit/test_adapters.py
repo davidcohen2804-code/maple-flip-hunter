@@ -39,7 +39,7 @@ def cozy_handler(request: httpx.Request) -> httpx.Response:
 
 
 def test_cozy_poll_parses_shops_and_deals():
-    a = CozyAdapter(client=_client(cozy_handler))
+    a = CozyAdapter(client=_client(cozy_handler), token="t")
     a._shops_watermark = 0
     a._deals_watermark = 0
     listings = run(a.poll())
@@ -56,7 +56,7 @@ def test_cozy_poll_parses_shops_and_deals():
 
 
 def test_cozy_evidence_filters_competitors_and_sales():
-    a = CozyAdapter(client=_client(cozy_handler))
+    a = CozyAdapter(client=_client(cozy_handler), token="t")
     from tests.conftest import make_listing
 
     lst = make_listing(name="Earring STR Scroll: Intermediate", price=70_000, seller="Kahiel", channel=10, item_id="98", ref=89_999)
@@ -77,7 +77,7 @@ def test_msw_poll_and_evidence():
             return httpx.Response(200, json=load_fixture("msw_item_angel_halo.json"))
         return httpx.Response(404)
 
-    a = MapleStoryWatchAdapter(client=_client(handler))
+    a = MapleStoryWatchAdapter(client=_client(handler), permission_granted=True)
     listings = run(a.poll())
     assert len(a.index) == 3
     assert len(listings) == 1                      # only Angel Halo is >=20% under typical and not sold out
@@ -96,7 +96,7 @@ def test_9_failed_api_request_marks_source_unavailable_without_crashing():
         calls["n"] += 1
         return httpx.Response(500)
 
-    a = CozyAdapter(client=_client(handler))
+    a = CozyAdapter(client=_client(handler), token="t")
     a.bucket.rate = 1000
     a.retry_base_delay = 0.01
     with pytest.raises(FetchError):
@@ -120,7 +120,7 @@ def test_10_rate_limited_source_backs_off():
     def handler(request):
         return httpx.Response(429, headers={"Retry-After": "7"})
 
-    a = MapleStoryWatchAdapter(client=_client(handler))
+    a = MapleStoryWatchAdapter(client=_client(handler), permission_granted=True)
     with pytest.raises(RateLimited) as e:
         run(a.fetch_json("/api/items"))
     assert e.value.retry_after == 7
@@ -140,3 +140,36 @@ def test_token_bucket_limits_rate():
             await b.acquire()
         return time.perf_counter() - t0
     assert run(go()) >= 0.07     # 4 tokens beyond the burst at 50/s
+
+
+def test_msw_and_cozy_never_request_without_permission_or_token():
+    """maplestory.watch Terms 2026-10-27 / cozy 403: without recorded permission (msw) or a token (cozy) the
+    adapters report why and make zero HTTP requests — nothing is retried, nothing is circumvented."""
+    import asyncio
+    import httpx
+    from maple_flip_hunter.adapters import CozyAdapter, MapleStoryWatchAdapter
+
+    calls = []
+
+    def handler(req):
+        calls.append(str(req.url))
+        return httpx.Response(200, json={"items": [], "shops": []})
+
+    a = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    assert a.health.status.value == "UNSUPPORTED" and "permission" in a.health.detail
+    assert asyncio.new_event_loop().run_until_complete(a.poll()) == []
+    from tests.conftest import make_listing
+    assert asyncio.new_event_loop().run_until_complete(a.verify(make_listing(name="Zard", price=1, ref=10))) is None
+    c = CozyAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"))
+    assert c.health.status.value == "AUTH REQUIRED"
+    assert asyncio.new_event_loop().run_until_complete(c.poll()) == []
+    assert calls == []
+    # with permission recorded but robots.txt still disallowing /api/, msw still does not read the API
+    def robots_handler(req):
+        calls.append(str(req.url))
+        if req.url.path == "/robots.txt":
+            return httpx.Response(200, text="User-agent: *\nDisallow: /api/\n")
+        return httpx.Response(200, json={"items": []})
+    b = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(robots_handler), base_url="https://x"), permission_granted=True)
+    assert asyncio.new_event_loop().run_until_complete(b.poll()) == [] and b.health.status.value == "UNSUPPORTED"
+    assert calls == ["https://x/robots.txt"]

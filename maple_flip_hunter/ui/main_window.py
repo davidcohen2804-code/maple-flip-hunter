@@ -695,7 +695,12 @@ class MainWindow(QMainWindow):
                 text = "STARTING · waiting for the first market data (" + ", ".join(h.label for h in starting) + ")…"
                 self._set_state("STARTING")
             elif not online and failed and len(failed) == len(health):
-                text = "ERROR · " + " · ".join(f"{h.label}: {h.last_error or h.status.value}" for h in failed) + " — click the state pill for details"
+                if all(h.status.value in ("UNSUPPORTED", "AUTH REQUIRED") for h in failed):
+                    text = ("NO PERMITTED SOURCE · the market sites currently do not allow apps to read their data "
+                            "(maplestory.watch Terms 2026-10-27) — waiting for the developer to obtain permission. Nothing is being polled.")
+                    self._set_state("ERROR")
+                else:
+                    text = "ERROR · " + " · ".join(f"{h.label}: {h.last_error or h.status.value}" for h in failed) + " — click the state pill for details"
             else:
                 text = f"{self.state_pill.text()} · {self.sources_text}"
             self.status_label.setText(text)

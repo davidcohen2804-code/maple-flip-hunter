@@ -214,7 +214,7 @@ def test_own_scan_before_index_is_repriced_when_index_arrives(tmp_path):
             return httpx.Response(200, json={"items": [{"name": "Hat Accuracy Scroll: Intermediate", "typical": 42_000, "samples": 50,
                                                         "sales24h": 6, "lowest": 43_000, "listed": 3, "range": [40_000, 45_000], "seen": time.time()}]})
         return httpx.Response(200, json={"listings": []})
-    msw = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), interval_s=60)
+    msw = MapleStoryWatchAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url="https://x"), interval_s=60, permission_granted=True)
     msw.bucket.rate = 1000
     fm_dir = tmp_path / "FMWatcher"
     fm_dir.mkdir()

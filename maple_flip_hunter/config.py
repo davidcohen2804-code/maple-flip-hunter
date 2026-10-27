@@ -111,6 +111,10 @@ class Settings(BaseModel):
     source_cozy_interval_s: float = Field(10.0, ge=5.0)
     source_cozy_max_shops_per_cycle: int = 25
     source_msw_enabled: bool = True
+    # maplestory.watch Terms (2026-10-27): /api/ is not public and apps may not read it. Only set True after WRITTEN
+    # permission from the site (Discord https://discord.gg/tdgvx66gk6); record who/when in the note.
+    source_msw_permission_granted: bool = False
+    source_msw_permission_note: str = ""
     source_msw_interval_s: float = Field(180.0, ge=60.0)
     source_msw_max_item_lookups_per_cycle: int = 40
     source_msw_candidate_discount: float = 0.20
@@ -178,6 +182,15 @@ class Settings(BaseModel):
             self.source_clubfm_base_url = "https://api.maplefm.gg"
             if not self.source_cozy_token.strip():
                 self.source_cozy_enabled = False     # no access permission → never polled (would only ever be HTTP 403)
+            # provider permissions are the OWNER's: they ship in friends_config.json at build time, a friend's
+            # settings.json cannot switch a source on
+            try:
+                from .licensing.client import LicenseClient
+                cfg = LicenseClient._load_config()
+            except Exception:  # noqa: BLE001
+                cfg = {}
+            self.source_msw_permission_granted = bool(cfg.get("msw_permission", False))
+            self.source_clubfm_permission_granted = bool(cfg.get("clubfm_permission", False)) and bool(self.source_clubfm_token.strip())
         return self
 
     @classmethod

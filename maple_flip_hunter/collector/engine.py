@@ -68,7 +68,8 @@ class MarketEngine:
         if s.source_msw_enabled:
             out.append(MapleStoryWatchAdapter(interval_s=s.source_msw_interval_s,
                                               max_item_lookups=s.source_msw_max_item_lookups_per_cycle,
-                                              candidate_discount=s.source_msw_candidate_discount))
+                                              candidate_discount=s.source_msw_candidate_discount,
+                                              permission_granted=s.source_msw_permission_granted))
         if s.source_clubfm_enabled:
             out.append(ClubFMAdapter(interval_s=s.source_clubfm_interval_s,
                                      permission_granted=s.source_clubfm_permission_granted,

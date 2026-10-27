@@ -56,19 +56,18 @@ def test_cozy_live_freshness():
     assert a.health.status.value in ("ONLINE", "STALE")
 
 
-def test_msw_live_freshness():
+def test_msw_not_polled_without_permission_and_terms_still_forbid_apps():
+    """maplestory.watch Terms (2026-10-27): /api/ is not public, apps may not read it. The adapter must stay
+    UNSUPPORTED and send nothing. We only read robots.txt (allowed for everyone) to record the current policy."""
     from maple_flip_hunter.adapters import MapleStoryWatchAdapter
 
     a = MapleStoryWatchAdapter()
-    t0 = time.perf_counter()
-    n = run(a.refresh_index())
-    ms = (time.perf_counter() - t0) * 1000
-    now = time.time()
-    newest = max(float(i.get("seen") or 0) for i in a.index.values())
-    _save("msw", {"http_ms": round(ms), "index_items": n, "index_age_s": round(now - a.index_at),
-                  "newest_listing_age_s": round(now - newest)})
+    rows = run(a.poll())
+    assert rows == [] and a.health.status.value == "UNSUPPORTED" and a.health.requests == 0 and a.health.errors == 0
+    allowed = run(a._robots_allow())
+    _save("msw", {"polled": False, "status": a.health.status.value, "robots_allows_api": allowed})
     run(a.aclose())
-    assert n > 500 and now - a.index_at < 3600
+    assert allowed is False, "robots.txt no longer disallows /api/ — re-read the Terms before enabling anything"
 
 
 def test_end_to_end_live_run_measures_alert_latency():
