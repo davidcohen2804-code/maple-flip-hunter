@@ -22,6 +22,9 @@ on:
         type: string
         required: true
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: windows-latest
@@ -78,3 +81,14 @@ jobs:
           path: |
             dist/MapleFlipHunterFriends.exe
             dist/MapleFlipHunterFriends.version.txt
+      - name: Publish as a GitHub Release (public download link for friends)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = python -c "import maple_flip_hunter;print(maple_flip_hunter.__version__)"
+          $tag = "friends-v$v"
+          $notes = "Maple Flip Hunter - Friends Edition v$v`n`nLicence server: ${{ inputs.server_url }}`n`n" + (Get-Content dist\MapleFlipHunterFriends.version.txt -Raw) + "`n`nFirst run: Windows SmartScreen may show 'Windows protected your PC' (unsigned) -> More info -> Run anyway. 3-day free trial, then an activation code from the developer."
+          gh release delete $tag --yes --cleanup-tag 2>$null
+          gh release create $tag dist\MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.version.txt --title "Friends Edition v$v" --notes $notes --latest
