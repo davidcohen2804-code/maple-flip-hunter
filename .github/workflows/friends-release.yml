@@ -66,9 +66,12 @@ jobs:
       - name: Smoke run (no game processes, licence check reaches the real server or fails closed)
         shell: pwsh
         run: |
-          dist\MapleFlipHunterFriends.exe --license-check dist\license_probe.json
-          Write-Host "exit code $LASTEXITCODE"; Get-Content dist\license_probe.json
-          if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3) { Write-Error "unexpected exit code" }
+          $p = Start-Process -FilePath dist\MapleFlipHunterFriends.exe -ArgumentList "--license-check","dist\license_probe.json" -PassThru -Wait
+          Write-Host "exit code $($p.ExitCode)"
+          if (-not (Test-Path dist\license_probe.json)) { Write-Error "no probe written"; exit 1 }
+          Get-Content dist\license_probe.json
+          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3) { Write-Error "unexpected exit code"; exit 1 }
+          # a trial row for the CI runner was created on the real server; the owner can delete it (machines table)
       - uses: actions/upload-artifact@v4
         with:
           name: MapleFlipHunterFriends-${{ github.run_number }}
