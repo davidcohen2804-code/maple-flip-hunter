@@ -37,6 +37,7 @@ def test_friends_edition_forces_physical_features_off(tmp_path, monkeypatch):
     fr = Settings.load(p)
     assert fr.physical_features_enabled is False and fr.source_fmwatcher_autostart is False
     assert fr.source_fmwatcher_enabled is False and fr.source_clubfm_base_url.startswith("https://api.maplefm.gg")
+    assert fr.source_cozy_enabled is False and fr.source_msw_enabled is True     # only permitted sources are polled
 
 
 def test_revoke_check_unrevoke_and_backup(server, tmp_path, capsys):

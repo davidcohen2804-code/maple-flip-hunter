@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.1 — 2026-10-27
+* First minutes after Start show **STARTING** (waiting for the first maplestory.watch poll) instead of ERROR; ERROR
+  only when every source failed, naming each one.
+* Friends Edition: cozy.markets is not polled without an access token (it could only answer HTTP 403).
+
 ## 0.14.0 — 2026-10-27 (final simple interface — same in Developer and Friends Edition)
 * Main screen: three numbers (Min Buy Price, Max Buy Price, Min Profit — mesos, saved automatically, applied to
   the live scanner and the table at once), one Start/Stop button, state LIVE / STOPPED / ERROR (click = scanner

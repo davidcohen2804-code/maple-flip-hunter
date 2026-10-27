@@ -685,14 +685,19 @@ class MainWindow(QMainWindow):
         if self.physical is not None and int(time.time()) % 3 == 0:
             self.physical.refresh_ages()
         if e.running:
-            err = next((h for h in health if h.status.value in ("ERROR", "AUTH REQUIRED", "UNAVAILABLE")), None)
+            failed = [h for h in health if h.status.value in ("ERROR", "AUTH REQUIRED", "UNAVAILABLE", "UNSUPPORTED")]
+            starting = [h for h in health if h.status.value == "STARTING"]
             if e.scanner_state == "LIVE":
                 text = (f"LIVE · {len(online)} source{'s' if len(online) != 1 else ''} online · newest data {self.stats['age']} · "
                         f"{e.metrics.listings_new:,} new listings · {self.stats['opps']} deals · {e.metrics.alerts} alerts")
-            elif err is not None and not online:
-                text = f"ERROR · {err.label}: {err.last_error or err.status.value} — click the state pill for details"
+            elif not online and starting:
+                # first poll not finished yet: this is STARTING, not an error (maplestory.watch polls every 3 min)
+                text = "STARTING · waiting for the first market data (" + ", ".join(h.label for h in starting) + ")…"
+                self._set_state("STARTING")
+            elif not online and failed and len(failed) == len(health):
+                text = "ERROR · " + " · ".join(f"{h.label}: {h.last_error or h.status.value}" for h in failed) + " — click the state pill for details"
             else:
-                text = f"{e.scanner_state} · {self.sources_text}"
+                text = f"{self.state_pill.text()} · {self.sources_text}"
             self.status_label.setText(text)
         self.status_label.setToolTip("\n".join(f"{k}: {v}" for k, v in self.stats.items()))
 

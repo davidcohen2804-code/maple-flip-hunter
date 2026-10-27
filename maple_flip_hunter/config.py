@@ -176,6 +176,8 @@ class Settings(BaseModel):
             self.source_fmwatcher_autostart = False
             self.source_fmwatcher_enabled = False
             self.source_clubfm_base_url = "https://api.maplefm.gg"
+            if not self.source_cozy_token.strip():
+                self.source_cozy_enabled = False     # no access permission → never polled (would only ever be HTTP 403)
         return self
 
     @classmethod
