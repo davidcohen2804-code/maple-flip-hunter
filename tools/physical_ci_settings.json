@@ -4,6 +4,8 @@
   "min_net_profit": 5000,
   "alert_min_confidence_label": "LOW",
   "source_cozy_enabled": false,
+  "source_hene_public_enabled": false,
+  "source_public_market_enabled": false,
   "source_msw_enabled": false,
   "source_fmwatcher_enabled": true,
   "source_fmwatcher_autostart": false,

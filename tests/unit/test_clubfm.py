@@ -55,6 +55,19 @@ def test_without_permission_the_adapter_never_requests_anything():
     assert calls == []
 
 
+def test_equipment_without_variant_stats_is_unverified():
+    from tests.conftest import make_listing
+    from maple_flip_hunter.config import Settings
+    from maple_flip_hunter.pricing import PricingEngine
+
+    a = _adapter(permission_granted=True)
+    run(a.poll())
+    listing = make_listing(name="Frameless Glasses", category="Equip", stats={"dex": 5}, price=10000)
+    ev = run(a.fetch_evidence(listing))
+    assert ev.stats_matched is False
+    assert PricingEngine(Settings()).value(listing, ev).confidence <= 0.40
+
+
 def test_with_permission_active_rows_and_sales_are_emitted():
     a = _adapter(permission_granted=True, token="abc")
     assert a.client.headers["Authorization"] == "Bearer abc"
@@ -168,7 +181,7 @@ def test_end_to_end_simulated_clubfm_alert_sound_dedupe_and_backoff(tmp_path):
 
     srv, base = _start_simulator()
     try:
-        s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_cozy_enabled=False,
+        s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_hene_public_enabled=False, source_public_market_enabled=False, source_cozy_enabled=False,
                      source_msw_enabled=False, source_clubfm_permission_granted=True, source_clubfm_token="demo-token",
                      source_clubfm_base_url=base, source_clubfm_live_backoff_s=5)
         n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))

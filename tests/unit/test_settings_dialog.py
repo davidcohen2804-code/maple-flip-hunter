@@ -75,3 +75,23 @@ def test_extra_band_persists(app, tmp_path):
     s.save(tmp_path / "s.json")
     dlg = SettingsDialog(Settings.load(tmp_path / "s.json"), notifier=FakeNotifier())
     assert [r.to_tier().sound for r in dlg.tier_rows] == ["soft", "bell", "melody", "jackpot"]
+
+
+def test_source_access_settings_roundtrip(app):
+    from PySide6.QtWidgets import QLineEdit
+
+    s = Settings(source_msw_permission_note="Approved by provider")
+    dlg = SettingsDialog(s, notifier=FakeNotifier())
+    assert not dlg.cb_msw_permission.isChecked()
+    assert dlg.msw_permission_note.text() == s.source_msw_permission_note
+    dlg.cb_msw_permission.setChecked(True)
+    dlg.msw_permission_note.setText("Provider approval 2026-10-28")
+    dlg.cozy_token.setText("cozy-test-token")
+    dlg.clubfm_token.setText("club-test-token")
+    out = dlg.result_settings(s)
+    assert out.source_msw_permission_granted
+    assert out.source_msw_permission_note == "Provider approval 2026-10-28"
+    assert out.source_cozy_token == "cozy-test-token"
+    assert out.source_clubfm_token == "club-test-token"
+    assert dlg.cozy_token.echoMode() == QLineEdit.Password
+    assert dlg.clubfm_token.echoMode() == QLineEdit.Password

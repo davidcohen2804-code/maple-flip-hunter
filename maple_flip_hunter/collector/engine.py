@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from ..adapters import ClubFMAdapter, CozyAdapter, FMWatcherAdapter, MapleStoryWatchAdapter
+from ..adapters import ClubFMAdapter, CozyAdapter, FMWatcherAdapter, MapleStoryWatchAdapter, PublicMarketAdapter, HenePublicAdapter
 from ..adapters.base import BaseAdapter
 from ..config import Settings, tier_for_profit
 from ..db import Database
@@ -59,6 +59,12 @@ class MarketEngine:
     def _default_adapters(self) -> list[BaseAdapter]:
         out: list[BaseAdapter] = []
         s = self.settings
+        if s.source_hene_public_enabled:
+            out.append(HenePublicAdapter(interval_s=s.source_hene_public_interval_s,
+                                         max_age_s=s.max_listing_age_s, max_buy_price=s.max_buy_price,
+                                         min_profit=s.min_net_profit))
+        if s.source_public_market_enabled:
+            out.append(PublicMarketAdapter(interval_s=s.source_public_market_interval_s))
         if s.source_cozy_enabled:
             out.append(CozyAdapter(interval_s=s.source_cozy_interval_s, max_shops_per_cycle=s.source_cozy_max_shops_per_cycle,
                                    token=s.source_cozy_token))
@@ -223,11 +229,19 @@ class MarketEngine:
     def _refresh_state(self) -> None:
         online = [a for a in self.adapters if a.health.status in (SourceStatus.ONLINE, SourceStatus.IDLE)]
         any_ok = [a for a in self.adapters if a.health.status in (SourceStatus.ONLINE, SourceStatus.STALE, SourceStatus.RATE_LIMITED)]
-        fresh = self.last_data_at is not None and time.time() - self.last_data_at < 180
+        now = time.time()
+        fresh = any(a.health.newest_data_age_s is not None
+                    and a.health.last_success_at is not None
+                    and a.health.newest_data_age_s + max(0, now - a.health.last_success_at)
+                    <= min(900, self.settings.max_listing_age_s)
+                    and now - a.health.last_success_at <= max(180, a.interval_s * 2)
+                    for a in online)
         if not self.running:
             self.scanner_state = "OFFLINE"
         elif online and fresh:
             self.scanner_state = "LIVE"
+        elif online:
+            self.scanner_state = "WAITING"
         elif any_ok:
             self.scanner_state = "DEGRADED"
         else:
@@ -317,6 +331,16 @@ class MarketEngine:
                 continue
             if kind == "seen":
                 self._reappeared(lst)
+                if (lst.source in ("fmc_public", "hene_public")
+                        and lst.source_age_s <= self.settings.max_listing_age_s
+                        and not self.db.was_alerted(lst.listing_key) and self._prefilter(lst)):
+                    try:
+                        refreshed = await self.evaluate(lst)
+                        if refreshed:
+                            out.append(refreshed)
+                    except Exception:
+                        log.exception("revaluation failed for refreshed public listing %s", lst.listing_key)
+                        self.metrics.errors += 1
                 continue
             if kind == "duplicate":
                 self.metrics.listings_duplicate += 1
@@ -366,7 +390,9 @@ class MarketEngine:
                 log.debug("evidence from %s failed: %s", lst.source, exc)
         # secondary source (maplestory.watch index) when the primary has thin sale data
         msw = next((a for a in self.adapters if isinstance(a, MapleStoryWatchAdapter)), None)
-        if msw is not None and msw.name != lst.source and msw.index:
+        if (msw is not None and msw.permission_granted and msw.name != lst.source and msw.index
+                and msw.index_at and time.time() - msw.index_at <= self.settings.max_evidence_age_s
+                and (lst.category or "").lower() != "equip" and not lst.stats):
             idx = msw.index.get(lst.item_name)
             if idx and idx.get("typical"):
                 if ev is None:
@@ -376,13 +402,15 @@ class MarketEngine:
                     ev.sold_median = int(idx["typical"])
                     ev.sold_count = int(idx.get("samples") or 0)
                     ev.sold_recent_24h = max(ev.sold_recent_24h, int(idx.get("sales24h") or 0))
+                    ev.source_data_age_s = max(0.0, time.time() - msw.index_at)
                     ev.notes.append("completed-sale median taken from maplestory.watch (14-day sales)")
                 else:
                     ev.secondary_reference = ev.secondary_reference or int(idx["typical"])
                     ev.secondary_label = ev.secondary_label or "maplestory.watch typical"
         # Club FM (when permitted): completed sales + live asks for rows that came from another source
         cf = next((a for a in self.adapters if isinstance(a, ClubFMAdapter)), None)
-        if cf is not None and cf.name != lst.source and cf.permission_granted:
+        if (cf is not None and cf.name != lst.source and cf.permission_granted
+                and (lst.category or "").lower() != "equip" and not lst.stats):
             try:
                 cev = await cf.fetch_evidence(lst, self.settings.comp_window_s)
             except Exception:  # noqa: BLE001
@@ -393,12 +421,11 @@ class MarketEngine:
                 else:
                     if ev.sold_count < PricingEngine.MIN_SOLD_FOR_REFERENCE and cev.sold_median:
                         ev.sold_median, ev.sold_count = cev.sold_median, cev.sold_count
+                        ev.source_data_age_s = cev.source_data_age_s
                         ev.notes.append("completed-sale median taken from Club FM")
                     ev.sold_recent_24h = max(ev.sold_recent_24h, cev.sold_recent_24h)
                     ev.comps.extend(cev.comps)
                     ev.active_asks.extend(cev.active_asks)
-                    if cev.source_data_age_s is not None and (ev.source_data_age_s is None or cev.source_data_age_s < ev.source_data_age_s):
-                        ev.source_data_age_s = cev.source_data_age_s
         if ev is None:
             return None
         # local database: competing asks and sales seen by any source
@@ -627,7 +654,14 @@ class MarketEngine:
         self.pricing.s = settings
         self.detector.s = settings
         for a in self.adapters:
-            if isinstance(a, CozyAdapter):
+            if isinstance(a, HenePublicAdapter):
+                a.interval_s = settings.source_hene_public_interval_s
+                a.max_age_s = min(900, settings.max_listing_age_s)
+                a.max_buy_price = settings.max_buy_price
+                a.min_profit = settings.min_net_profit
+            elif isinstance(a, PublicMarketAdapter):
+                a.interval_s = settings.source_public_market_interval_s
+            elif isinstance(a, CozyAdapter):
                 a.interval_s = settings.source_cozy_interval_s
                 a.max_shops_per_cycle = settings.source_cozy_max_shops_per_cycle
             elif isinstance(a, MapleStoryWatchAdapter):

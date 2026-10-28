@@ -622,7 +622,7 @@ class MainWindow(QMainWindow):
         if opp.gone:
             self.proxy.invalidateFilter()
         for pop in list(AlertPopup._open):
-            if pop.opp.key == opp.key:
+            if isinstance(pop, AlertPopup) and pop.opp.key == opp.key:
                 pop.set_availability(status, opp.last_verified_at, note)
         sel = self._selected()
         if sel is not None and sel.key == opp.key and self.details_dialog.isVisible():
@@ -645,8 +645,6 @@ class MainWindow(QMainWindow):
         """User-facing states: LIVE / STOPPED / ERROR (plus STARTING while connecting)."""
         if state == "OFFLINE":
             state = "ERROR" if self.engine.running else "STOPPED"
-        elif state == "DEGRADED":
-            state = "LIVE"                  # some source down, data still flowing: the status line says which
         color = STATE_COLORS.get(state, MUTED)
         self.state_pill.setText(state)
         self.state_pill.setStyleSheet(f"background:{color}22; color:{color}; border:1px solid {color};")
@@ -658,7 +656,7 @@ class MainWindow(QMainWindow):
         health = health or e.health()
         e._refresh_state()
         self._set_state(e.scanner_state if e.running else "STOPPED")
-        online = [h for h in health if h.status.value == "ONLINE"]
+        online = [h for h in health if h.status in (SourceStatus.ONLINE, SourceStatus.IDLE)]
         if int(time.time()) % 5 == 0:
             self._refresh_fmw_status()
         self.sources_text = " · ".join(f"{h.label}: {h.status.value}" for h in health) or "none"
@@ -690,14 +688,19 @@ class MainWindow(QMainWindow):
             if e.scanner_state == "LIVE":
                 text = (f"LIVE · {len(online)} source{'s' if len(online) != 1 else ''} online · newest data {self.stats['age']} · "
                         f"{e.metrics.listings_new:,} new listings · {self.stats['opps']} deals · {e.metrics.alerts} alerts")
+            elif e.scanner_state == "DEGRADED":
+                text = f"DEGRADED · fresh market data not confirmed · {self.sources_text} — click the state pill for details"
+            elif e.scanner_state == "WAITING":
+                text = "CONNECTED · watching for fresh qualifying listings · click the state pill for source details"
             elif not online and starting:
                 # first poll not finished yet: this is STARTING, not an error (maplestory.watch polls every 3 min)
                 text = "STARTING · waiting for the first market data (" + ", ".join(h.label for h in starting) + ")…"
                 self._set_state("STARTING")
             elif not online and failed and len(failed) == len(health):
                 if all(h.status.value in ("UNSUPPORTED", "AUTH REQUIRED") for h in failed):
-                    text = ("NO PERMITTED SOURCE · the market sites currently do not allow apps to read their data "
-                            "(maplestory.watch Terms 2026-10-27) — waiting for the developer to obtain permission. Nothing is being polled.")
+                    text = ("NO AVAILABLE SOURCE · access or configuration required · "
+                            + " · ".join(f"{h.label}: {h.detail or h.last_error or h.status.value}" for h in failed)
+                            + " — open Settings → Sources or click the state pill for details")
                     self._set_state("ERROR")
                 else:
                     text = "ERROR · " + " · ".join(f"{h.label}: {h.last_error or h.status.value}" for h in failed) + " — click the state pill for details"

@@ -232,6 +232,20 @@ class SettingsDialog(QDialog):
         f4 = QFormLayout(g4)
         f4.setContentsMargins(16, 20, 16, 16)
         f4.setSpacing(12)
+        self.cb_hene_public = QCheckBox("HeneFM — public deal watch, exact prices, at most 15 minutes old")
+        self.cb_hene_public.setChecked(s.source_hene_public_enabled)
+        self.hene_public_int = QDoubleSpinBox()
+        self.hene_public_int.setRange(30, 3600)
+        self.hene_public_int.setSuffix(" s")
+        self.hene_public_int.setValue(s.source_hene_public_interval_s)
+        f4.addRow(self.cb_hene_public, self.hene_public_int)
+        self.cb_public_market = QCheckBox("Free Market Classic — public page, visible shop rows only")
+        self.cb_public_market.setChecked(s.source_public_market_enabled)
+        self.public_market_int = QDoubleSpinBox()
+        self.public_market_int.setRange(60, 3600)
+        self.public_market_int.setSuffix(" s")
+        self.public_market_int.setValue(s.source_public_market_interval_s)
+        f4.addRow(self.cb_public_market, self.public_market_int)
         self.cb_cozy = QCheckBox("cozy.markets (primary, ~10 s polling)")
         self.cb_cozy.setChecked(s.source_cozy_enabled)
         self.cozy_int = QDoubleSpinBox()
@@ -246,12 +260,19 @@ class SettingsDialog(QDialog):
         self.msw_int.setValue(s.source_msw_interval_s)
         f4.addRow(self.cb_cozy, self.cozy_int)
         self.cozy_token = QLineEdit(s.source_cozy_token)
+        self.cozy_token.setEchoMode(QLineEdit.Password)
         self.cozy_token.setPlaceholderText("access token, only if cozy.markets issues one")
         f4.addRow("   cozy.markets token", self.cozy_token)
         f4.addRow(self.cb_msw, self.msw_int)
+        self.cb_msw_permission = QCheckBox("Written permission from maplestory.watch has been obtained")
+        self.cb_msw_permission.setChecked(s.source_msw_permission_granted)
+        self.msw_permission_note = QLineEdit(s.source_msw_permission_note)
+        self.msw_permission_note.setPlaceholderText("Who approved access and when")
+        f4.addRow(self.cb_msw_permission, self.msw_permission_note)
         self.cb_clubfm = QCheckBox("Club FM (maplefm.gg) — needs their written permission")
         self.cb_clubfm.setChecked(s.source_clubfm_permission_granted)
         self.clubfm_token = QLineEdit(s.source_clubfm_token)
+        self.clubfm_token.setEchoMode(QLineEdit.Password)
         self.clubfm_token.setPlaceholderText("token from Club FM (optional, for the live feed)")
         f4.addRow(self.cb_clubfm, self.clubfm_token)
         warn = QLabel("Tick Club FM only after they agreed in writing (Terms of Use §2). See docs/ACCESS_REQUESTS.md.")
@@ -286,7 +307,8 @@ class SettingsDialog(QDialog):
                 lbl = f4.labelForField(wdg)
                 if lbl is not None:
                     lbl.hide()
-        note = QLabel("Source changes take effect after Stop → Start.")
+        note = QLabel("Source changes restart the scanner when settings are saved. Access must be granted by the provider.")
+        note.setWordWrap(True)
         note.setObjectName("subtitle")
         f4.addRow(note)
         root.addWidget(g4)
@@ -405,8 +427,14 @@ class SettingsDialog(QDialog):
             show_uncertain=self.cb_unc.isChecked(), start_minimized=self.cb_min.isChecked(),
             alert_min_confidence_label=self.conf_min.currentData(),
             run_on_windows_startup=self.cb_startup.isChecked(), source_cozy_enabled=self.cb_cozy.isChecked(),
+            source_public_market_enabled=self.cb_public_market.isChecked(),
+            source_hene_public_enabled=self.cb_hene_public.isChecked(),
+            source_hene_public_interval_s=self.hene_public_int.value(),
+            source_public_market_interval_s=self.public_market_int.value(),
             source_cozy_interval_s=self.cozy_int.value(), source_msw_enabled=self.cb_msw.isChecked(),
             source_msw_interval_s=self.msw_int.value(), source_cozy_token=self.cozy_token.text().strip(),
+            source_msw_permission_granted=self.cb_msw_permission.isChecked(),
+            source_msw_permission_note=self.msw_permission_note.text().strip(),
             source_clubfm_permission_granted=self.cb_clubfm.isChecked(),
             source_clubfm_token=self.clubfm_token.text().strip(),
             source_fmwatcher_dir=self.fmw_dir.text().strip(), source_fmwatcher_autostart=self.cb_fmw_auto.isChecked(),
