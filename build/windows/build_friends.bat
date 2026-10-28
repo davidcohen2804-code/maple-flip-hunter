@@ -5,7 +5,9 @@ if "%~2"=="" ( echo usage: build_friends.bat ^<license server URL^> ^<public key
 echo friends> maple_flip_hunter\_edition.txt
 > maple_flip_hunter\friends_config.json echo {"server": "%~1", "public_key": "%~2"}
 python -m PyInstaller --noconfirm --clean build\windows\MapleFlipHunterFriends.spec
+set "MFH_BUILD_EXIT=%ERRORLEVEL%"
 echo developer> maple_flip_hunter\_edition.txt
 del maple_flip_hunter\friends_config.json
+if not "%MFH_BUILD_EXIT%"=="0" exit /b %MFH_BUILD_EXIT%
 echo.
 echo Friends Edition: dist\MapleFlipHunterFriends.exe

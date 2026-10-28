@@ -25,11 +25,15 @@ def _client(handler):
 def cozy_handler(request: httpx.Request) -> httpx.Response:
     p = request.url.path
     if p == "/api/shops":
-        return httpx.Response(200, json=load_fixture("cozy_shops.json"))
+        data = load_fixture("cozy_shops.json")
+        data["pages"] = 1  # this fixture contains one page; do not repeat it 8,310 times
+        return httpx.Response(200, json=data)
     if p.startswith("/api/shops/") and p.endswith("/listings"):
         return httpx.Response(200, json=load_fixture("cozy_shop_listings.json"))
     if p == "/api/deals":
-        return httpx.Response(200, json=load_fixture("cozy_deals.json"))
+        data = load_fixture("cozy_deals.json")
+        data["pages"] = 1
+        return httpx.Response(200, json=data)
     if p == "/api/items":
         return httpx.Response(200, json={"rows": [{"id": 98, "name": "Earring STR Scroll: Intermediate", "cat": "Use", "sub": "Scroll"},
                                                   {"id": 571, "name": "Gephart", "cat": "Equip", "sub": "Dagger"}], "pages": 1})

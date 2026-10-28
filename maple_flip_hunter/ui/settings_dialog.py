@@ -246,12 +246,19 @@ class SettingsDialog(QDialog):
         self.msw_int.setValue(s.source_msw_interval_s)
         f4.addRow(self.cb_cozy, self.cozy_int)
         self.cozy_token = QLineEdit(s.source_cozy_token)
+        self.cozy_token.setEchoMode(QLineEdit.Password)
         self.cozy_token.setPlaceholderText("access token, only if cozy.markets issues one")
         f4.addRow("   cozy.markets token", self.cozy_token)
         f4.addRow(self.cb_msw, self.msw_int)
+        self.cb_msw_permission = QCheckBox("Written permission from maplestory.watch has been obtained")
+        self.cb_msw_permission.setChecked(s.source_msw_permission_granted)
+        self.msw_permission_note = QLineEdit(s.source_msw_permission_note)
+        self.msw_permission_note.setPlaceholderText("Who approved access and when")
+        f4.addRow(self.cb_msw_permission, self.msw_permission_note)
         self.cb_clubfm = QCheckBox("Club FM (maplefm.gg) — needs their written permission")
         self.cb_clubfm.setChecked(s.source_clubfm_permission_granted)
         self.clubfm_token = QLineEdit(s.source_clubfm_token)
+        self.clubfm_token.setEchoMode(QLineEdit.Password)
         self.clubfm_token.setPlaceholderText("token from Club FM (optional, for the live feed)")
         f4.addRow(self.cb_clubfm, self.clubfm_token)
         warn = QLabel("Tick Club FM only after they agreed in writing (Terms of Use §2). See docs/ACCESS_REQUESTS.md.")
@@ -286,7 +293,8 @@ class SettingsDialog(QDialog):
                 lbl = f4.labelForField(wdg)
                 if lbl is not None:
                     lbl.hide()
-        note = QLabel("Source changes take effect after Stop → Start.")
+        note = QLabel("Source changes restart the scanner when settings are saved. Access must be granted by the provider.")
+        note.setWordWrap(True)
         note.setObjectName("subtitle")
         f4.addRow(note)
         root.addWidget(g4)
@@ -407,6 +415,8 @@ class SettingsDialog(QDialog):
             run_on_windows_startup=self.cb_startup.isChecked(), source_cozy_enabled=self.cb_cozy.isChecked(),
             source_cozy_interval_s=self.cozy_int.value(), source_msw_enabled=self.cb_msw.isChecked(),
             source_msw_interval_s=self.msw_int.value(), source_cozy_token=self.cozy_token.text().strip(),
+            source_msw_permission_granted=self.cb_msw_permission.isChecked(),
+            source_msw_permission_note=self.msw_permission_note.text().strip(),
             source_clubfm_permission_granted=self.cb_clubfm.isChecked(),
             source_clubfm_token=self.clubfm_token.text().strip(),
             source_fmwatcher_dir=self.fmw_dir.text().strip(), source_fmwatcher_autostart=self.cb_fmw_auto.isChecked(),

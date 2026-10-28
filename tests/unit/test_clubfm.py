@@ -55,6 +55,19 @@ def test_without_permission_the_adapter_never_requests_anything():
     assert calls == []
 
 
+def test_equipment_without_variant_stats_is_unverified():
+    from tests.conftest import make_listing
+    from maple_flip_hunter.config import Settings
+    from maple_flip_hunter.pricing import PricingEngine
+
+    a = _adapter(permission_granted=True)
+    run(a.poll())
+    listing = make_listing(name="Frameless Glasses", category="Equip", stats={"dex": 5}, price=10000)
+    ev = run(a.fetch_evidence(listing))
+    assert ev.stats_matched is False
+    assert PricingEngine(Settings()).value(listing, ev).confidence <= 0.40
+
+
 def test_with_permission_active_rows_and_sales_are_emitted():
     a = _adapter(permission_granted=True, token="abc")
     assert a.client.headers["Authorization"] == "Bearer abc"

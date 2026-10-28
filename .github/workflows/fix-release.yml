@@ -1,0 +1,58 @@
+name: Build updated Windows download
+
+on:
+  push:
+    branches: [codex/fix-scanner-status-popups]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e .[dev]
+      - name: Test collection, valuation, settings and notifications
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest tests/unit -q --junitxml=reports/unit.xml
+      - name: Build using existing licence server
+        shell: pwsh
+        run: |
+          $server = "https://mfh-license.davidcohen2804.workers.dev"
+          $health = Invoke-RestMethod "$server/v1/health"
+          if (-not $health.ok -or $health.public_key -notmatch '^[0-9a-fA-F]{64}$') { throw "Invalid licence server health" }
+          & cmd /c build\windows\build_friends.bat $server $health.public_key
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/check_friends_binary.py dist\MapleFlipHunterFriends.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Smoke test Windows executable
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\MapleFlipHunterFriends.exe -ArgumentList "--license-check","reports\license.json" -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "EXE startup timed out" }
+          if ($p.ExitCode -ne 0) { throw "EXE licence check failed: $($p.ExitCode)" }
+          $probe = Get-Content reports\license.json -Raw | ConvertFrom-Json
+          if (-not $probe.online -or $probe.status -notin @("trial", "licensed")) { throw "Licence check did not pass online" }
+      - name: Publish tested build
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = python -c "import maple_flip_hunter; print(maple_flip_hunter.__version__)"
+          $hash = (Get-FileHash dist\MapleFlipHunterFriends.exe -Algorithm SHA256).Hash.ToLower()
+          "version=$version`nsha256=$hash`ncommit=${{ github.sha }}" | Set-Content dist\MapleFlipHunterFriends.version.txt
+          $notes = "Fixes scanner freshness display, mixed popup updates, source access settings and equipment valuation safeguards. Unit tests and Windows EXE startup passed. Live market collection still requires provider access; this release does not add new source integrations."
+          gh release create "friends-v$version" dist\MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.version.txt --target "${{ github.sha }}" --title "Friends Edition v$version" --notes $notes --prerelease
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-validation
+          path: reports/

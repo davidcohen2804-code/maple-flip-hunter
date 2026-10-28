@@ -213,6 +213,7 @@ class ClubFMAdapter(BaseAdapter):
         if not rows:
             return None
         ev = MarketEvidence(item_key=listing.item_key, item_name=listing.item_name, category=listing.category,
+                            stats_matched=False if (listing.category or "").lower() == "equip" or listing.stats else None,
                             source_data_age_s=max(0.0, time.time() - self._last_T) if self._last_T else None)
         cutoff = time.time() - comp_window_s
         sold_prices = []
@@ -228,9 +229,9 @@ class ClubFMAdapter(BaseAdapter):
             c = Comparable(unit_price=p, at=at, sold=sold, seller=str(r.get("s") or ""), channel=int(r.get("c") or 0) or None,
                            fm_room=parse_fm_room(str(r.get("r") or "")), source=self.name)
             ev.comps.append(c)
-            if sold:
+            if sold and at >= time.time() - 14 * 86400:
                 sold_prices.append(p)
-                if at >= cutoff:
+                if at >= time.time() - 86400:
                     ev.sold_recent_24h += 1
             elif str(r.get("st") or "") == "up" and at >= cutoff and not (
                 c.seller.lower() == listing.seller.lower() and p == listing.price):

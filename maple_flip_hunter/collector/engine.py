@@ -366,7 +366,9 @@ class MarketEngine:
                 log.debug("evidence from %s failed: %s", lst.source, exc)
         # secondary source (maplestory.watch index) when the primary has thin sale data
         msw = next((a for a in self.adapters if isinstance(a, MapleStoryWatchAdapter)), None)
-        if msw is not None and msw.name != lst.source and msw.index:
+        if (msw is not None and msw.permission_granted and msw.name != lst.source and msw.index
+                and msw.index_at and time.time() - msw.index_at <= self.settings.max_evidence_age_s
+                and (lst.category or "").lower() != "equip" and not lst.stats):
             idx = msw.index.get(lst.item_name)
             if idx and idx.get("typical"):
                 if ev is None:
@@ -376,13 +378,15 @@ class MarketEngine:
                     ev.sold_median = int(idx["typical"])
                     ev.sold_count = int(idx.get("samples") or 0)
                     ev.sold_recent_24h = max(ev.sold_recent_24h, int(idx.get("sales24h") or 0))
+                    ev.source_data_age_s = max(0.0, time.time() - msw.index_at)
                     ev.notes.append("completed-sale median taken from maplestory.watch (14-day sales)")
                 else:
                     ev.secondary_reference = ev.secondary_reference or int(idx["typical"])
                     ev.secondary_label = ev.secondary_label or "maplestory.watch typical"
         # Club FM (when permitted): completed sales + live asks for rows that came from another source
         cf = next((a for a in self.adapters if isinstance(a, ClubFMAdapter)), None)
-        if cf is not None and cf.name != lst.source and cf.permission_granted:
+        if (cf is not None and cf.name != lst.source and cf.permission_granted
+                and (lst.category or "").lower() != "equip" and not lst.stats):
             try:
                 cev = await cf.fetch_evidence(lst, self.settings.comp_window_s)
             except Exception:  # noqa: BLE001
@@ -393,12 +397,11 @@ class MarketEngine:
                 else:
                     if ev.sold_count < PricingEngine.MIN_SOLD_FOR_REFERENCE and cev.sold_median:
                         ev.sold_median, ev.sold_count = cev.sold_median, cev.sold_count
+                        ev.source_data_age_s = cev.source_data_age_s
                         ev.notes.append("completed-sale median taken from Club FM")
                     ev.sold_recent_24h = max(ev.sold_recent_24h, cev.sold_recent_24h)
                     ev.comps.extend(cev.comps)
                     ev.active_asks.extend(cev.active_asks)
-                    if cev.source_data_age_s is not None and (ev.source_data_age_s is None or cev.source_data_age_s < ev.source_data_age_s):
-                        ev.source_data_age_s = cev.source_data_age_s
         if ev is None:
             return None
         # local database: competing asks and sales seen by any source
