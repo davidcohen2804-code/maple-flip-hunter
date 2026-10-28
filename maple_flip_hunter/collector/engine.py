@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from ..adapters import ClubFMAdapter, CozyAdapter, FMWatcherAdapter, MapleStoryWatchAdapter
+from ..adapters import ClubFMAdapter, CozyAdapter, FMWatcherAdapter, MapleStoryWatchAdapter, PublicMarketAdapter
 from ..adapters.base import BaseAdapter
 from ..config import Settings, tier_for_profit
 from ..db import Database
@@ -59,6 +59,8 @@ class MarketEngine:
     def _default_adapters(self) -> list[BaseAdapter]:
         out: list[BaseAdapter] = []
         s = self.settings
+        if s.source_public_market_enabled:
+            out.append(PublicMarketAdapter(interval_s=s.source_public_market_interval_s))
         if s.source_cozy_enabled:
             out.append(CozyAdapter(interval_s=s.source_cozy_interval_s, max_shops_per_cycle=s.source_cozy_max_shops_per_cycle,
                                    token=s.source_cozy_token))
@@ -317,6 +319,16 @@ class MarketEngine:
                 continue
             if kind == "seen":
                 self._reappeared(lst)
+                if (lst.source == "fmc_public"
+                        and lst.source_age_s <= self.settings.max_listing_age_s
+                        and not self.db.was_alerted(lst.listing_key) and self._prefilter(lst)):
+                    try:
+                        refreshed = await self.evaluate(lst)
+                        if refreshed:
+                            out.append(refreshed)
+                    except Exception:
+                        log.exception("revaluation failed for refreshed public listing %s", lst.listing_key)
+                        self.metrics.errors += 1
                 continue
             if kind == "duplicate":
                 self.metrics.listings_duplicate += 1

@@ -33,7 +33,7 @@ def app():
 
 def test_default_build_has_no_physical_features(app, tmp_path, monkeypatch):
     assert Settings().physical_features_enabled is False and Settings().source_fmwatcher_autostart is False
-    s = Settings(source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(tmp_path))  # folder set, but OFF
+    s = Settings(source_public_market_enabled=False, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(tmp_path))  # folder set, but OFF
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     eng = MarketEngine(s, Database(":memory:"), n)
     assert not any(a.name == "fmwatcher" for a in eng.adapters)          # no local-scan adapter
@@ -61,7 +61,7 @@ def test_game_keeps_running_while_alerts_work_without_interaction(app, tmp_path,
 
     game = subprocess.Popen([sys.executable, "-c", "import time\nwhile True: time.sleep(0.1)"])
     try:
-        s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_cozy_enabled=False, source_msw_enabled=False)
+        s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_public_market_enabled=False, source_cozy_enabled=False, source_msw_enabled=False)
         n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
         played = []
         real = n.play

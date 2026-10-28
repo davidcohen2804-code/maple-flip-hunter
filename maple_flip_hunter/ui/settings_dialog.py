@@ -232,6 +232,13 @@ class SettingsDialog(QDialog):
         f4 = QFormLayout(g4)
         f4.setContentsMargins(16, 20, 16, 16)
         f4.setSpacing(12)
+        self.cb_public_market = QCheckBox("Free Market Classic — public page, visible shop rows only")
+        self.cb_public_market.setChecked(s.source_public_market_enabled)
+        self.public_market_int = QDoubleSpinBox()
+        self.public_market_int.setRange(60, 3600)
+        self.public_market_int.setSuffix(" s")
+        self.public_market_int.setValue(s.source_public_market_interval_s)
+        f4.addRow(self.cb_public_market, self.public_market_int)
         self.cb_cozy = QCheckBox("cozy.markets (primary, ~10 s polling)")
         self.cb_cozy.setChecked(s.source_cozy_enabled)
         self.cozy_int = QDoubleSpinBox()
@@ -413,6 +420,8 @@ class SettingsDialog(QDialog):
             show_uncertain=self.cb_unc.isChecked(), start_minimized=self.cb_min.isChecked(),
             alert_min_confidence_label=self.conf_min.currentData(),
             run_on_windows_startup=self.cb_startup.isChecked(), source_cozy_enabled=self.cb_cozy.isChecked(),
+            source_public_market_enabled=self.cb_public_market.isChecked(),
+            source_public_market_interval_s=self.public_market_int.value(),
             source_cozy_interval_s=self.cozy_int.value(), source_msw_enabled=self.cb_msw.isChecked(),
             source_msw_interval_s=self.msw_int.value(), source_cozy_token=self.cozy_token.text().strip(),
             source_msw_permission_granted=self.cb_msw_permission.isChecked(),

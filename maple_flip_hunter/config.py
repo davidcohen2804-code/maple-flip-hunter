@@ -107,6 +107,8 @@ class Settings(BaseModel):
     run_on_windows_startup: bool = False
 
     # --- sources --------------------------------------------------------
+    source_public_market_enabled: bool = True
+    source_public_market_interval_s: float = Field(60.0, ge=60.0)
     source_cozy_enabled: bool = True
     source_cozy_interval_s: float = Field(10.0, ge=5.0)
     source_cozy_max_shops_per_cycle: int = 25
