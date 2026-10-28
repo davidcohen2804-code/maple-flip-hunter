@@ -46,6 +46,50 @@ def _window(tmp_path):
     return w, eng
 
 
+def test_stale_source_is_not_presented_as_live(app, tmp_path):
+    from types import SimpleNamespace
+    from maple_flip_hunter.models import SourceHealth, SourceStatus
+
+    w, eng = _window(tmp_path)
+    adapter = SimpleNamespace(health=SourceHealth(name="cozy", label="Cozy", status=SourceStatus.STALE))
+    eng.adapters = [adapter]
+    eng.running = True
+    eng.last_data_at = time.time() - 600
+    try:
+        w._refresh_stats()
+        assert w.state_pill.text() == "DEGRADED"
+        assert w.status_label.text().startswith("DEGRADED")
+        adapter.health.status = SourceStatus.IDLE
+        eng.last_data_at = time.time()
+        w._refresh_stats()
+        assert w.state_pill.text() == "LIVE"
+        assert "1 source online" in w.status_label.text()
+    finally:
+        eng.running = False
+        w.tray.hide()
+        w.close()
+
+
+def test_availability_update_ignores_spot_popups(app, tmp_path):
+    from types import SimpleNamespace
+    from maple_flip_hunter.ui.alert_popup import AlertPopup, SpotPopup
+
+    w, eng = _window(tmp_path)
+    opp = asyncio.run(eng.ingest([make_listing(price=8_000, ref=42_000)]))[0]
+    # Both card types share the stack, but a spot card has no market opportunity.
+    spot = SpotPopup.__new__(SpotPopup)
+    market = AlertPopup(opp, "JACKPOT")
+    AlertPopup._open.extend([spot, market])
+    try:
+        w.on_availability(opp, "SOLD", "slot sold out", True)
+        assert market.avail.text().startswith("⛔ SOLD")
+    finally:
+        AlertPopup._open.remove(spot)
+        market.close()
+        w.tray.hide()
+        w.close()
+
+
 def test_table_has_the_ten_columns_sold_price_is_never_invented_and_details_open_on_double_click(app, tmp_path):
     w, eng = _window(tmp_path)
     w.resize(1366, 768)
