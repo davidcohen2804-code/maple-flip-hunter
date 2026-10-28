@@ -132,6 +132,26 @@ def test_idle_feed_plus_recently_downloaded_stale_rows_is_not_live():
     db.close()
 
 
+def test_coverage_and_saved_filters_work_with_public_adapter():
+    async def check():
+        a, requests = adapter()
+        db = Database(':memory:')
+        eng = MarketEngine(Settings(), db, adapters=[a])
+        try:
+            assert eng.coverage()['items_with_listings'] == 0
+            changed = Settings(max_buy_price=25000, min_net_profit=7000, max_listing_age_s=600)
+            eng.update_settings(changed)
+            await eng.ingest(await a.poll())
+            assert requests[0].url.params['budget'] == '25000'
+            assert requests[0].url.params['min_profit'] == '7000'
+            assert requests[0].url.params['max_age'] == '10'
+            assert eng.coverage()['items_with_listings'] == 1
+        finally:
+            await a.client.aclose()
+            db.close()
+    asyncio.run(check())
+
+
 @pytest.mark.parametrize('status', [200, 403])
 def test_changed_layout_or_access_refusal_fails_closed(status):
     async def check():

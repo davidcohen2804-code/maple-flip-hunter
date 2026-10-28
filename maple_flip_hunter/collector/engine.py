@@ -304,14 +304,7 @@ class MarketEngine:
         cov: dict[str, Any] = {"catalog_items": 0, "items_with_listings": self.db.item_count(),
                                "listings_1h": self.db.listing_count(time.time() - 3600)}
         for a in self.adapters:
-            if isinstance(a, HenePublicAdapter):
-                a.interval_s = settings.source_hene_public_interval_s
-                a.max_age_s = min(900, settings.max_listing_age_s)
-                a.max_buy_price = settings.max_buy_price
-                a.min_profit = settings.min_net_profit
-            elif isinstance(a, PublicMarketAdapter):
-                a.interval_s = settings.source_public_market_interval_s
-            elif isinstance(a, CozyAdapter):
+            if isinstance(a, CozyAdapter):
                 cov["catalog_items"] = max(cov["catalog_items"], len(a.catalog))
             elif isinstance(a, MapleStoryWatchAdapter):
                 cov["catalog_items"] = max(cov["catalog_items"], len(a.index))
@@ -661,7 +654,14 @@ class MarketEngine:
         self.pricing.s = settings
         self.detector.s = settings
         for a in self.adapters:
-            if isinstance(a, CozyAdapter):
+            if isinstance(a, HenePublicAdapter):
+                a.interval_s = settings.source_hene_public_interval_s
+                a.max_age_s = min(900, settings.max_listing_age_s)
+                a.max_buy_price = settings.max_buy_price
+                a.min_profit = settings.min_net_profit
+            elif isinstance(a, PublicMarketAdapter):
+                a.interval_s = settings.source_public_market_interval_s
+            elif isinstance(a, CozyAdapter):
                 a.interval_s = settings.source_cozy_interval_s
                 a.max_shops_per_cycle = settings.source_cozy_max_shops_per_cycle
             elif isinstance(a, MapleStoryWatchAdapter):
