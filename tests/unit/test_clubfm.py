@@ -181,7 +181,7 @@ def test_end_to_end_simulated_clubfm_alert_sound_dedupe_and_backoff(tmp_path):
 
     srv, base = _start_simulator()
     try:
-        s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_public_market_enabled=False, source_cozy_enabled=False,
+        s = Settings(min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_hene_public_enabled=False, source_public_market_enabled=False, source_cozy_enabled=False,
                      source_msw_enabled=False, source_clubfm_permission_granted=True, source_clubfm_token="demo-token",
                      source_clubfm_base_url=base, source_clubfm_live_backoff_s=5)
         n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))

@@ -239,7 +239,7 @@ def test_start_stop_start_rebuilds_closed_clients_and_keeps_polling():
 
 
 def test_settings_change_between_runs_rebuilds_adapters_from_settings():
-    s = Settings(source_public_market_enabled=False, source_cozy_enabled=False, source_msw_enabled=False, source_clubfm_enabled=False)
+    s = Settings(source_hene_public_enabled=False, source_public_market_enabled=False, source_cozy_enabled=False, source_msw_enabled=False, source_clubfm_enabled=False)
     eng = MarketEngine(s, Database(":memory:"), Notifier(enable_audio=False))   # adapters come from settings
     assert eng.adapters == []
     eng.start(); eng.stop()

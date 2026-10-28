@@ -690,6 +690,8 @@ class MainWindow(QMainWindow):
                         f"{e.metrics.listings_new:,} new listings · {self.stats['opps']} deals · {e.metrics.alerts} alerts")
             elif e.scanner_state == "DEGRADED":
                 text = f"DEGRADED · fresh market data not confirmed · {self.sources_text} — click the state pill for details"
+            elif e.scanner_state == "WAITING":
+                text = "CONNECTED · watching for fresh qualifying listings · click the state pill for source details"
             elif not online and starting:
                 # first poll not finished yet: this is STARTING, not an error (maplestory.watch polls every 3 min)
                 text = "STARTING · waiting for the first market data (" + ", ".join(h.label for h in starting) + ")…"

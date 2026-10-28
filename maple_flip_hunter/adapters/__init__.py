@@ -4,6 +4,7 @@ from .cozy import CozyAdapter  # noqa: F401
 from .fmwatcher import FMWatcherAdapter  # noqa: F401
 from .maplestory_watch import MapleStoryWatchAdapter  # noqa: F401
 from .public_market import PublicMarketAdapter  # noqa: F401
+from .hene_public import HenePublicAdapter  # noqa: F401
 
 # Sources investigated but NOT integrated (see docs/SOURCE_AUDIT.md):
 UNSUPPORTED_SOURCES = {

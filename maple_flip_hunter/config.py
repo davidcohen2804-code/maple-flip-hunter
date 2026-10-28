@@ -107,6 +107,8 @@ class Settings(BaseModel):
     run_on_windows_startup: bool = False
 
     # --- sources --------------------------------------------------------
+    source_hene_public_enabled: bool = True
+    source_hene_public_interval_s: float = Field(30.0, ge=30.0)
     source_public_market_enabled: bool = True
     source_public_market_interval_s: float = Field(60.0, ge=60.0)
     source_cozy_enabled: bool = True

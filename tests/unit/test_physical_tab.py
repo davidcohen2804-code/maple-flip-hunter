@@ -58,7 +58,7 @@ def test_physical_tab_start_stop_table_and_history(app, tmp_path, monkeypatch):
         ("NoobTrader", "Hat Accuracy Scroll: Intermediate", 8_000, 1, 1, False, "FM3", 7, None, 5),
         ("Pricey", "Pan Lid", 90_000, 1, 1, False, "FM2", 5, None, 9)]))
     db_file = tmp_path / "m.sqlite3"
-    s = Settings(physical_features_enabled=True, min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_public_market_enabled=False, source_cozy_enabled=False,
+    s = Settings(physical_features_enabled=True, min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_hene_public_enabled=False, source_public_market_enabled=False, source_cozy_enabled=False,
                  source_msw_enabled=True, source_fmwatcher_dir=str(folder), source_fmwatcher_autostart=False)
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     played = []
@@ -117,7 +117,7 @@ def test_physical_tab_start_stop_table_and_history(app, tmp_path, monkeypatch):
 
 
 def test_physical_tab_error_when_folder_missing(app, tmp_path):
-    s = Settings(physical_features_enabled=True, source_public_market_enabled=False, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_autostart=False)
+    s = Settings(physical_features_enabled=True, source_hene_public_enabled=False, source_public_market_enabled=False, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_autostart=False)
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     w = MainWindow(MarketEngine(s, Database(":memory:"), n), s, n)
     w.physical.start_scanning()
@@ -137,7 +137,7 @@ def test_start_stop_start_no_orphans_no_duplicates_no_autorestart_and_valuations
         ("Rich", "Pink Elephant Slippers", 39_999, 1, 1, False, "FM1", 35, None, 5),          # above the 10k band
         ("NoobTrader", "Hat Accuracy Scroll: Intermediate", 8_000, 1, 1, False, "FM3", 7, None, 5),
         ("Nobody", "Strange Unknown Thing", 5_000, 1, 1, False, "FM2", 2, None, 5)]))
-    s = Settings(physical_features_enabled=True, source_public_market_enabled=False, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(folder),
+    s = Settings(physical_features_enabled=True, source_hene_public_enabled=False, source_public_market_enabled=False, source_cozy_enabled=False, source_msw_enabled=False, source_fmwatcher_dir=str(folder),
                  source_fmwatcher_autostart=True)                                              # defaults: band 2,500–10,000
     n = Notifier(enable_audio=False, sounds=ensure_sounds(tmp_path))
     played = []
@@ -209,7 +209,7 @@ def test_history_rows_get_valuations_after_restart_and_new_scan_alerts(app, tmp_
     folder = tmp_path / "FMWatcher"
     _fake_watcher(folder)
     db_file = tmp_path / "m.sqlite3"
-    s = Settings(physical_features_enabled=True, min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_public_market_enabled=False, source_cozy_enabled=False,
+    s = Settings(physical_features_enabled=True, min_buy_price=0, max_buy_price=1_000_000, min_net_profit=5_000, source_hene_public_enabled=False, source_public_market_enabled=False, source_cozy_enabled=False,
                  source_msw_enabled=False, source_fmwatcher_dir=str(folder), source_fmwatcher_autostart=False)
 
     def evidence_factory(eng):

@@ -23,7 +23,9 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest tests/unit -q --junitxml=reports/unit.xml
       - name: Record live source availability (network-dependent; never bypass a refusal)
-        run: python tools/check_public_market.py reports/public-source.json
+        run: |
+          python tools/check_public_market.py reports/public-source.json
+          python tools/check_hene_public.py reports/hene-source.json
       - name: Build using existing licence server
         shell: pwsh
         run: |
@@ -42,6 +44,15 @@ jobs:
           if ($p.ExitCode -ne 0) { throw "EXE licence check failed: $($p.ExitCode)" }
           $probe = Get-Content reports\license.json -Raw | ConvertFrom-Json
           if (-not $probe.online -or $probe.status -notin @("trial", "licensed")) { throw "Licence check did not pass online" }
+      - name: Smoke test packaged scanner and public adapters
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\MapleFlipHunterFriends.exe -ArgumentList "--headless","--seconds","12","--out","reports\scanner.json" -PassThru
+          if (-not $p.WaitForExit(60000)) { $p.Kill(); throw "Scanner EXE startup timed out" }
+          if ($p.ExitCode -ne 0) { throw "Scanner EXE failed: $($p.ExitCode)" }
+          $probe = Get-Content reports\scanner.json -Raw | ConvertFrom-Json
+          if (-not ($probe.health | Where-Object name -eq "hene_public")) { throw "Packaged public adapter missing" }
+          if ($probe.alerts | Where-Object { $_.listing_age_s -gt 900 }) { throw "Stale listing generated an alert" }
       - name: Publish tested build
         shell: pwsh
         env:
@@ -51,8 +62,9 @@ jobs:
           $hash = (Get-FileHash dist\MapleFlipHunterFriends.exe -Algorithm SHA256).Hash.ToLower()
           "version=$version`nsha256=$hash`ncommit=${{ github.sha }}" | Set-Content dist\MapleFlipHunterFriends.version.txt
           $source = Get-Content reports\public-source.json -Raw | ConvertFrom-Json
-          $notes = "PREVIEW: Adds a public HTML reader for the shop rows rendered by Free Market Classic, with conservative timestamps, stale-alert suppression and deduplication. Unit tests and Windows EXE startup passed. Live source status on the build network: $($source.status); usable rows: $($source.rows); data verified: $($source.data_verified). Access may be refused on some networks. Coverage is partial; data may be stale. This is not a verified scanner for all six sites. The attached report records the actual live result."
-          gh release create "friends-v$version" dist\MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.version.txt reports\public-source.json --target "${{ github.sha }}" --title "Friends Edition v$version (preview, network-dependent source)" --notes $notes --prerelease
+          $hene = Get-Content reports\hene-source.json -Raw | ConvertFrom-Json
+          $notes = "PREVIEW: Adds a 30-second public HeneFM deal watch, exact shop prices and dated sales from item pages, strict 15-minute listing age, deduplication and a WAITING state for connected empty feeds. Unit tests and Windows EXE startup passed. Live HeneFM result: $($hene.status), new rows $($hene.new_rows), fresh listing verified $($hene.fresh_listing_verified). Free Market Classic result: $($source.status), rows $($source.rows). Actual reports are attached. Coverage is partial and depends on the sites updating and allowing the connection. This is not a verified scanner for all six sites."
+          gh release create "friends-v$version" dist\MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.version.txt reports\public-source.json reports\hene-source.json --target "${{ github.sha }}" --title "Friends Edition v$version (public deal watch preview)" --notes $notes --prerelease
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()

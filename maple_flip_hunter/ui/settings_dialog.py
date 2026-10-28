@@ -232,6 +232,13 @@ class SettingsDialog(QDialog):
         f4 = QFormLayout(g4)
         f4.setContentsMargins(16, 20, 16, 16)
         f4.setSpacing(12)
+        self.cb_hene_public = QCheckBox("HeneFM — public deal watch, exact prices, at most 15 minutes old")
+        self.cb_hene_public.setChecked(s.source_hene_public_enabled)
+        self.hene_public_int = QDoubleSpinBox()
+        self.hene_public_int.setRange(30, 3600)
+        self.hene_public_int.setSuffix(" s")
+        self.hene_public_int.setValue(s.source_hene_public_interval_s)
+        f4.addRow(self.cb_hene_public, self.hene_public_int)
         self.cb_public_market = QCheckBox("Free Market Classic — public page, visible shop rows only")
         self.cb_public_market.setChecked(s.source_public_market_enabled)
         self.public_market_int = QDoubleSpinBox()
@@ -421,6 +428,8 @@ class SettingsDialog(QDialog):
             alert_min_confidence_label=self.conf_min.currentData(),
             run_on_windows_startup=self.cb_startup.isChecked(), source_cozy_enabled=self.cb_cozy.isChecked(),
             source_public_market_enabled=self.cb_public_market.isChecked(),
+            source_hene_public_enabled=self.cb_hene_public.isChecked(),
+            source_hene_public_interval_s=self.hene_public_int.value(),
             source_public_market_interval_s=self.public_market_int.value(),
             source_cozy_interval_s=self.cozy_int.value(), source_msw_enabled=self.cb_msw.isChecked(),
             source_msw_interval_s=self.msw_int.value(), source_cozy_token=self.cozy_token.text().strip(),

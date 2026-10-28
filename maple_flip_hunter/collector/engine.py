@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any, Callable, Optional
 
-from ..adapters import ClubFMAdapter, CozyAdapter, FMWatcherAdapter, MapleStoryWatchAdapter, PublicMarketAdapter
+from ..adapters import ClubFMAdapter, CozyAdapter, FMWatcherAdapter, MapleStoryWatchAdapter, PublicMarketAdapter, HenePublicAdapter
 from ..adapters.base import BaseAdapter
 from ..config import Settings, tier_for_profit
 from ..db import Database
@@ -59,6 +59,10 @@ class MarketEngine:
     def _default_adapters(self) -> list[BaseAdapter]:
         out: list[BaseAdapter] = []
         s = self.settings
+        if s.source_hene_public_enabled:
+            out.append(HenePublicAdapter(interval_s=s.source_hene_public_interval_s,
+                                         max_age_s=s.max_listing_age_s, max_buy_price=s.max_buy_price,
+                                         min_profit=s.min_net_profit))
         if s.source_public_market_enabled:
             out.append(PublicMarketAdapter(interval_s=s.source_public_market_interval_s))
         if s.source_cozy_enabled:
@@ -230,6 +234,8 @@ class MarketEngine:
             self.scanner_state = "OFFLINE"
         elif online and fresh:
             self.scanner_state = "LIVE"
+        elif online:
+            self.scanner_state = "WAITING"
         elif any_ok:
             self.scanner_state = "DEGRADED"
         else:
@@ -292,7 +298,14 @@ class MarketEngine:
         cov: dict[str, Any] = {"catalog_items": 0, "items_with_listings": self.db.item_count(),
                                "listings_1h": self.db.listing_count(time.time() - 3600)}
         for a in self.adapters:
-            if isinstance(a, CozyAdapter):
+            if isinstance(a, HenePublicAdapter):
+                a.interval_s = settings.source_hene_public_interval_s
+                a.max_age_s = min(900, settings.max_listing_age_s)
+                a.max_buy_price = settings.max_buy_price
+                a.min_profit = settings.min_net_profit
+            elif isinstance(a, PublicMarketAdapter):
+                a.interval_s = settings.source_public_market_interval_s
+            elif isinstance(a, CozyAdapter):
                 cov["catalog_items"] = max(cov["catalog_items"], len(a.catalog))
             elif isinstance(a, MapleStoryWatchAdapter):
                 cov["catalog_items"] = max(cov["catalog_items"], len(a.index))
@@ -319,7 +332,7 @@ class MarketEngine:
                 continue
             if kind == "seen":
                 self._reappeared(lst)
-                if (lst.source == "fmc_public"
+                if (lst.source in ("fmc_public", "hene_public")
                         and lst.source_age_s <= self.settings.max_listing_age_s
                         and not self.db.was_alerted(lst.listing_key) and self._prefilter(lst)):
                     try:

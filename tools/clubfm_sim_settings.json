@@ -3,6 +3,7 @@
   "max_buy_price": 1000000,
   "min_net_profit": 5000,
   "source_cozy_enabled": false,
+  "source_hene_public_enabled": false,
   "source_public_market_enabled": false,
   "source_msw_enabled": false,
   "source_clubfm_enabled": true,

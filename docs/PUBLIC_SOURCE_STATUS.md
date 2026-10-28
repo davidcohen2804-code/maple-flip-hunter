@@ -1,5 +1,24 @@
 # Public-page scanning in 0.15.2
 
+## 0.15.3: public HeneFM deal watch
+
+The default configuration additionally watches `/flips/deals` every 30 seconds. It requests deals within the
+user's budget/profit filters and a maximum observation age of 15 minutes, then reads linked public item pages
+to find the exact shop price, seller, channel, stock and source observation time. Rounded card prices are
+not accepted as exact buy prices. Dated individual sale observations supply comparables. Equipment without
+verified matching stats is still unverified and cannot gain high confidence.
+
+Only the public deal candidates are covered. Requests are bounded to one per five seconds and candidates
+rotate to avoid starvation. HTTP 403 is reported, never bypassed. Duplicate alerts remain suppressed across
+restarts. The site's own refresh delay remains outside the app's control.
+
+Live check: connection succeeded but no candidates met the 15-minute age, budget and profit filters. That is
+IDLE, and the scanner reports WAITING when a source is connected but there is no new eligible observation.
+This is not a verified live alert on a real new deal, and is not a claim to scan all six requested sites.
+
+Run `python tools/check_hene_public.py` for the source diagnostic. Windows packaging checks now start the
+scanner itself as well as the licence check, ensuring the public adapters and HTML parser are bundled.
+
 The default configuration now reads the public Free Market Classic `/fm?hl=en` HTML table once per minute.
 It does not use login cookies, an API key, a hidden browser, spoofed browser headers, or a challenge bypass.
 HTTP 401/403 stops data ingestion; HTTP 429 backs off. A changed table layout fails closed.
