@@ -60,6 +60,9 @@ def test_stale_source_is_not_presented_as_live(app, tmp_path):
         assert w.state_pill.text() == "DEGRADED"
         assert w.status_label.text().startswith("DEGRADED")
         adapter.health.status = SourceStatus.IDLE
+        adapter.health.newest_data_age_s = 5
+        adapter.health.last_success_at = time.time()
+        adapter.interval_s = 60
         eng.last_data_at = time.time()
         w._refresh_stats()
         assert w.state_pill.text() == "LIVE"

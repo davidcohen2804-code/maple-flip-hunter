@@ -114,6 +114,24 @@ def test_more_than_six_candidates_are_rotated_without_starvation():
     asyncio.run(check())
 
 
+def test_idle_feed_plus_recently_downloaded_stale_rows_is_not_live():
+    from types import SimpleNamespace
+    from maple_flip_hunter.models import SourceHealth
+    now = time.time()
+    idle = SimpleNamespace(interval_s=30, health=SourceHealth(name='idle', label='idle', status=SourceStatus.IDLE,
+                                                            last_success_at=now, newest_data_age_s=None))
+    stale = SimpleNamespace(interval_s=60, health=SourceHealth(name='stale', label='stale', status=SourceStatus.STALE,
+                                                              last_success_at=now, newest_data_age_s=7200))
+    db = Database(':memory:')
+    eng = MarketEngine(Settings(), db, adapters=[idle, stale])
+    eng.running = True
+    eng.last_data_at = now
+    eng._refresh_state()
+    assert eng.scanner_state == 'WAITING'
+    eng.running = False
+    db.close()
+
+
 @pytest.mark.parametrize('status', [200, 403])
 def test_changed_layout_or_access_refusal_fails_closed(status):
     async def check():

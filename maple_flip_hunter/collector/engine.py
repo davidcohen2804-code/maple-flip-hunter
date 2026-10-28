@@ -229,7 +229,13 @@ class MarketEngine:
     def _refresh_state(self) -> None:
         online = [a for a in self.adapters if a.health.status in (SourceStatus.ONLINE, SourceStatus.IDLE)]
         any_ok = [a for a in self.adapters if a.health.status in (SourceStatus.ONLINE, SourceStatus.STALE, SourceStatus.RATE_LIMITED)]
-        fresh = self.last_data_at is not None and time.time() - self.last_data_at < 180
+        now = time.time()
+        fresh = any(a.health.newest_data_age_s is not None
+                    and a.health.last_success_at is not None
+                    and a.health.newest_data_age_s + max(0, now - a.health.last_success_at)
+                    <= min(900, self.settings.max_listing_age_s)
+                    and now - a.health.last_success_at <= max(180, a.interval_s * 2)
+                    for a in online)
         if not self.running:
             self.scanner_state = "OFFLINE"
         elif online and fresh:

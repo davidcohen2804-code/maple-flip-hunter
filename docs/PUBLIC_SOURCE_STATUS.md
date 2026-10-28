@@ -1,6 +1,6 @@
 # Public-page scanning in 0.15.2
 
-## 0.15.3: public HeneFM deal watch
+## 0.15.4: public HeneFM deal watch
 
 The default configuration additionally watches `/flips/deals` every 30 seconds. It requests deals within the
 user's budget/profit filters and a maximum observation age of 15 minutes, then reads linked public item pages
@@ -15,6 +15,8 @@ restarts. The site's own refresh delay remains outside the app's control.
 Live check: connection succeeded but no candidates met the 15-minute age, budget and profit filters. That is
 IDLE, and the scanner reports WAITING when a source is connected but there is no new eligible observation.
 This is not a verified live alert on a real new deal, and is not a claim to scan all six requested sites.
+
+LIVE now requires a source with a genuinely fresh dated observation; receiving stale rows while another feed is idle does not make the scanner LIVE.
 
 Run `python tools/check_hene_public.py` for the source diagnostic. Windows packaging checks now start the
 scanner itself as well as the licence check, ensuring the public adapters and HTML parser are bundled.
