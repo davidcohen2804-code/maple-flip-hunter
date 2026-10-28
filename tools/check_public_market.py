@@ -5,7 +5,10 @@ import sys
 import time
 from pathlib import Path
 
+import httpx
+
 from maple_flip_hunter.adapters.public_market import PublicMarketAdapter
+from maple_flip_hunter.adapters.base import FetchError
 from maple_flip_hunter.collector.engine import MarketEngine
 from maple_flip_hunter.config import Settings
 from maple_flip_hunter.db import Database
@@ -18,15 +21,20 @@ async def check():
     alerts = []
     engine.on("alert", lambda *args: alerts.append(args))
     try:
-        rows = await adapter.poll()
+        try:
+            rows = await adapter.poll()
+        except (FetchError, httpx.HTTPError) as exc:
+            return {"checked_at": time.time(), "source": adapter.name, "status": adapter.health.status.value,
+                    "data_verified": False, "rows": 0, "requests": adapter.health.requests,
+                    "ready_for_fresh_alerts": False, "error": str(exc),
+                    "coverage": "Connection unavailable from this network; no bypass attempted"}
         await engine.ingest(rows)
         result = {"checked_at": time.time(), "source": adapter.name, "status": adapter.health.status.value,
                   "rows": len(rows), "requests": adapter.health.requests,
                   "newest_observation_age_s": adapter.health.newest_data_age_s,
                   "alerts": len(alerts), "detail": adapter.health.detail,
+                  "data_verified": bool(rows), "ready_for_fresh_alerts": adapter.health.status.value == "ONLINE" and bool(rows),
                   "coverage": "Rows rendered on the public /fm page only; not the entire market"}
-        if not rows:
-            raise RuntimeError("No usable public market rows were received")
         if all(row.source_age_s > engine.settings.max_listing_age_s for row in rows) and alerts:
             raise RuntimeError("Stale public data generated an alert")
         return result

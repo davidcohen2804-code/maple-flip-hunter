@@ -22,7 +22,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest tests/unit -q --junitxml=reports/unit.xml
-      - name: Verify public source with real market rows
+      - name: Record live source availability (network-dependent; never bypass a refusal)
         run: python tools/check_public_market.py reports/public-source.json
       - name: Build using existing licence server
         shell: pwsh
@@ -50,8 +50,9 @@ jobs:
           $version = python -c "import maple_flip_hunter; print(maple_flip_hunter.__version__)"
           $hash = (Get-FileHash dist\MapleFlipHunterFriends.exe -Algorithm SHA256).Hash.ToLower()
           "version=$version`nsha256=$hash`ncommit=${{ github.sha }}" | Set-Content dist\MapleFlipHunterFriends.version.txt
-          $notes = "Adds a public HTML reader for the shop rows rendered by Free Market Classic, with conservative timestamps, stale-alert suppression and deduplication. Includes scanner status, popup and valuation fixes. Unit tests, a live public-page check and Windows EXE startup passed. Coverage is partial; data may be stale; this is not a verified scanner for all six requested sites."
-          gh release create "friends-v$version" dist\MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.version.txt --target "${{ github.sha }}" --title "Friends Edition v$version" --notes $notes --prerelease
+          $source = Get-Content reports\public-source.json -Raw | ConvertFrom-Json
+          $notes = "PREVIEW: Adds a public HTML reader for the shop rows rendered by Free Market Classic, with conservative timestamps, stale-alert suppression and deduplication. Unit tests and Windows EXE startup passed. Live source status on the build network: $($source.status); usable rows: $($source.rows); data verified: $($source.data_verified). Access may be refused on some networks. Coverage is partial; data may be stale. This is not a verified scanner for all six sites. The attached report records the actual live result."
+          gh release create "friends-v$version" dist\MapleFlipHunterFriends.exe dist\MapleFlipHunterFriends.version.txt reports\public-source.json --target "${{ github.sha }}" --title "Friends Edition v$version (preview, network-dependent source)" --notes $notes --prerelease
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
         if: always()

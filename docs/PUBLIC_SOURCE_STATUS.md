@@ -17,6 +17,11 @@ Fresh observations can be evaluated again after stale observations; alert histor
 Settings → Sources contains an independent enable switch and a polling interval with a 60-second minimum.
 The existing licensed Friends Edition and its licence server are unchanged.
 
+The Windows GitHub Actions runner returned HTTP 403 for the public page on the same day, although the local
+check received 196 rows. Source availability therefore depends on the network. 0.15.2 is a preview, not a
+claim of working live collection on every PC. The release includes the build network's actual source report;
+unit and EXE startup checks remain mandatory. Source failures are reported rather than bypassed.
+
 ## Remaining requested sources
 
 - MapleStory.watch, Club FM and Cozy: the public landing pages load, but contain no populated shop rows in
@@ -29,4 +34,4 @@ The existing licensed Friends Edition and its licence server are unchanged.
 
 Run `python tools/check_public_market.py` for a real, read-only ingestion check. Its output explicitly
 reports freshness, parsed row count, alert count and the coverage limit. The Windows release workflow runs
-this check as well as the complete unit suite and the packaged executable licence/startup check.
+this diagnostic as well as the complete unit suite and the packaged executable licence/startup check.
